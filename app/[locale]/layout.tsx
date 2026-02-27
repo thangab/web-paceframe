@@ -39,7 +39,7 @@ export default async function LocaleLayout({
   const t = copy[locale];
 
   return (
-    <main className="min-h-screen bg-[#131B2E] text-white">
+    <main lang={locale} className="min-h-screen bg-[#131B2E] text-white">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 pb-8 pt-6 sm:px-6 md:px-10 md:pt-12">
         <Link href={`/${locale}`} className="flex items-center gap-3">
           <Image

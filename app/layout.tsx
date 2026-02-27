@@ -13,13 +13,30 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl = "https://paceframe.app";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: {
     default: "PaceFrame",
     template: "%s | PaceFrame",
   },
   description:
     "PaceFrame helps athletes turn activity data into bold visuals made for social sharing, including Instagram and TikTok stories, with connection via Strava or Apple Health.",
+  openGraph: {
+    type: "website",
+    url: siteUrl,
+    siteName: "PaceFrame",
+    title: "PaceFrame",
+    description:
+      "Turn activity data into bold visuals made for social sharing.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "PaceFrame",
+    description:
+      "Turn activity data into bold visuals made for social sharing.",
+  },
 };
 
 const GA_MEASUREMENT_ID = "G-37DXQ7QBM8";

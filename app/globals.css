@@ -24,3 +24,104 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@keyframes paceframe-carousel {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-50% - 0.75rem));
+  }
+}
+
+.pf-template-shell {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+@keyframes paceframe-vertical {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(calc(-50% - 0.75rem));
+  }
+}
+
+.pf-vertical-marquee {
+  animation: paceframe-vertical 72s linear infinite;
+  will-change: transform;
+}
+
+.pf-vertical-collage {
+  transform: perspective(1200px) rotate(-4deg);
+  transform-origin: center;
+}
+
+@keyframes paceframe-vertical-reverse {
+  from {
+    transform: translateY(calc(-50% - 0.75rem));
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.pf-vertical-marquee-reverse {
+  animation: paceframe-vertical-reverse 84s linear infinite;
+  will-change: transform;
+}
+
+@keyframes paceframe-vertical-third {
+  from {
+    transform: translateY(-20%);
+  }
+  to {
+    transform: translateY(calc(-70% - 0.75rem));
+  }
+}
+
+.pf-vertical-marquee-third {
+  animation: paceframe-vertical-third 92s linear infinite;
+  will-change: transform;
+}
+
+@media (min-width: 640px) {
+  @keyframes paceframe-vertical {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(calc(-50% - 1rem));
+    }
+  }
+
+  @keyframes paceframe-vertical-reverse {
+    from {
+      transform: translateY(calc(-50% - 1rem));
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes paceframe-vertical-third {
+    from {
+      transform: translateY(-20%);
+    }
+    to {
+      transform: translateY(calc(-70% - 1rem));
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-vertical-marquee,
+  .pf-vertical-marquee-reverse,
+  .pf-vertical-marquee-third {
+    animation: none;
+  }
+
+  .pf-vertical-collage {
+    transform: none;
+  }
+}

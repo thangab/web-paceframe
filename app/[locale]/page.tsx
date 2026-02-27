@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import NewsletterForm from "../components/newsletter-form";
@@ -6,6 +7,8 @@ import { isLocale, locales, type Locale } from "../i18n";
 type PageProps = {
   params: Promise<{ locale: string }>;
 };
+
+const siteUrl = "https://paceframe.app";
 
 const copy: Record<
   Locale,
@@ -23,6 +26,9 @@ const copy: Record<
     bullet1: string;
     bullet2: string;
     bullet3: string;
+    templatesTitle: string;
+    templatesSubtitle: string;
+    templatesBody: string;
     notAvailable: string;
     formLead: string;
   }
@@ -44,6 +50,11 @@ const copy: Record<
     bullet1: "App in final polishing",
     bullet2: "Progressive access by email",
     bullet3: "Direct support: contact@paceframe.app",
+    templatesTitle: "Template Examples",
+    templatesSubtitle:
+      "These are examples of templates already applied to real activities.",
+    templatesBody:
+      "Each visual is auto-generated from your activity data. PaceFrame formats the key stats into modern story-ready layouts so you can share instantly on social media.",
     notAvailable: "The app is not available yet",
     formLead: "PaceFrame is launching soon. Leave your email to get notified.",
   },
@@ -64,11 +75,36 @@ const copy: Record<
     bullet1: "Application en finalisation",
     bullet2: "Acces progressif par email",
     bullet3: "Support direct: contact@paceframe.app",
+    templatesTitle: "Exemples de Templates",
+    templatesSubtitle:
+      "Ce sont des exemples de templates deja appliques a de vraies activites.",
+    templatesBody:
+      "Chaque visuel est genere automatiquement a partir de tes donnees d'activite. PaceFrame met en forme les stats importantes dans des layouts modernes prets pour les stories.",
     notAvailable: "L'app n'est pas encore disponible",
     formLead:
       "PaceFrame arrive bientot. Laisse ton email pour etre prevenu au lancement.",
   },
 };
+
+const templateImages = [
+  "/templates/template1.jpg",
+  "/templates/template2.jpg",
+  "/templates/template3.jpg",
+  "/templates/template4.jpg",
+  "/templates/template5.jpg",
+  "/templates/template6.jpg",
+] as const;
+
+const loopedTemplateImages = [...templateImages, ...templateImages];
+const reverseLoopedTemplateImages = [...templateImages]
+  .reverse()
+  .concat([...templateImages].reverse());
+const shiftedLoopedTemplateImages = [
+  ...templateImages.slice(2),
+  ...templateImages.slice(0, 2),
+  ...templateImages.slice(2),
+  ...templateImages.slice(0, 2),
+];
 
 export function generateStaticParams() {
   return locales.map((locale) => ({ locale }));
@@ -78,10 +114,30 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { locale: rawLocale } = await params;
   const locale = isLocale(rawLocale) ? rawLocale : "en";
   const t = copy[locale];
+  const canonical = locale === "en" ? `${siteUrl}/en` : `${siteUrl}/fr`;
 
   return {
     title: t.metaTitle,
     description: t.metaDescription,
+    alternates: {
+      canonical,
+      languages: {
+        en: `${siteUrl}/en`,
+        fr: `${siteUrl}/fr`,
+        "x-default": `${siteUrl}/en`,
+      },
+    },
+    openGraph: {
+      type: "website",
+      url: canonical,
+      title: t.metaTitle,
+      description: t.metaDescription,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: t.metaTitle,
+      description: t.metaDescription,
+    },
   };
 }
 
@@ -97,7 +153,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 overflow-x-hidden px-4 pb-10 sm:gap-14 sm:px-6 md:px-10 lg:overflow-x-visible">
-        <section className="grid items-center gap-10 lg:grid-cols-2">
+      <section className="grid items-center gap-10 lg:grid-cols-2">
           <div className="space-y-6">
             <p className="inline-block rounded-full border border-[#D4FF54]/40 bg-[#D4FF54]/10 px-3 py-1 text-xs font-semibold tracking-[0.2em] text-[#D4FF54] uppercase">
               {t.comingSoon}
@@ -146,10 +202,92 @@ export default async function LocaleHomePage({ params }: PageProps) {
               </div>
             </div>
           </div>
-        </section>
+      </section>
 
-        <section
-          id="get-started"
+      <section className="grid items-center gap-8 lg:grid-cols-2">
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold sm:text-2xl">{t.templatesTitle}</h2>
+          <p className="max-w-xl text-sm text-white/75">{t.templatesSubtitle}</p>
+          <p className="max-w-xl text-sm leading-relaxed text-white/70">
+            {t.templatesBody}
+          </p>
+        </div>
+
+        <div className="pf-template-shell relative overflow-hidden rounded-3xl bg-white/[0.03] p-2 sm:p-4">
+          <div className="pointer-events-none absolute -top-8 left-6 h-24 w-24 rounded-full bg-[#D4FF54]/25 blur-2xl" />
+          <div className="pointer-events-none absolute -bottom-8 right-6 h-24 w-24 rounded-full bg-[#6ea8ff]/20 blur-2xl" />
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-14 bg-gradient-to-b from-[#131B2E] to-transparent sm:h-20" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-14 bg-gradient-to-t from-[#131B2E] to-transparent sm:h-20" />
+
+          <div className="pf-vertical-collage grid h-[430px] grid-cols-3 gap-3 overflow-hidden sm:h-[560px] sm:gap-4">
+            <div className="pf-vertical-marquee flex flex-col gap-3 sm:gap-4">
+              {loopedTemplateImages.map((src, index) => (
+                <article
+                  key={`left-${src}-${index}`}
+                  className={`group overflow-hidden rounded-[22px] bg-[#0d111d] shadow-[0_10px_35px_rgba(0,0,0,0.38)] ${
+                    index % 2 === 0 ? "rotate-[2deg]" : "-rotate-[2deg]"
+                  }`}
+                >
+                  <div className="relative aspect-[9/16]">
+                    <Image
+                      src={src}
+                      alt={`PaceFrame template ${(index % templateImages.length) + 1}`}
+                      fill
+                      sizes="(max-width: 1024px) 45vw, 15vw"
+                      className="object-cover transition duration-500 group-hover:scale-[1.05]"
+                    />
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <div className="pf-vertical-marquee-reverse flex flex-col gap-3 sm:gap-4">
+              {reverseLoopedTemplateImages.map((src, index) => (
+                <article
+                  key={`right-${src}-${index}`}
+                  className={`group overflow-hidden rounded-[22px] bg-[#0d111d] shadow-[0_10px_35px_rgba(0,0,0,0.38)] ${
+                    index % 2 === 0 ? "-rotate-[2deg]" : "rotate-[2deg]"
+                  }`}
+                >
+                  <div className="relative aspect-[9/16]">
+                    <Image
+                      src={src}
+                      alt={`PaceFrame template ${(index % templateImages.length) + 1}`}
+                      fill
+                      sizes="(max-width: 1024px) 45vw, 15vw"
+                      className="object-cover transition duration-500 group-hover:scale-[1.05]"
+                    />
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <div className="pf-vertical-marquee-third flex flex-col gap-3 sm:gap-4">
+              {shiftedLoopedTemplateImages.map((src, index) => (
+                <article
+                  key={`third-${src}-${index}`}
+                  className={`group overflow-hidden rounded-[22px] bg-[#0d111d] shadow-[0_10px_35px_rgba(0,0,0,0.38)] ${
+                    index % 2 === 0 ? "rotate-[2deg]" : "-rotate-[2deg]"
+                  }`}
+                >
+                  <div className="relative aspect-[9/16]">
+                    <Image
+                      src={src}
+                      alt={`PaceFrame template ${(index % templateImages.length) + 1}`}
+                      fill
+                      sizes="(max-width: 1024px) 30vw, 13vw"
+                      className="object-cover transition duration-500 group-hover:scale-[1.05]"
+                    />
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="get-started"
           className="rounded-3xl border border-[#D4FF54]/25 bg-gradient-to-r from-[#1A2540] to-[#101726] p-5 sm:p-8"
         >
           <div className="flex flex-col gap-5">

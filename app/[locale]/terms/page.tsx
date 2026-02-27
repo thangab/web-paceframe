@@ -6,6 +6,8 @@ type PageProps = {
   params: Promise<{ locale: string }>;
 };
 
+const siteUrl = "https://paceframe.app";
+
 type Section = {
   title: string;
   paragraphs?: string[];
@@ -232,10 +234,31 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { locale: rawLocale } = await params;
   const locale = isLocale(rawLocale) ? rawLocale : "en";
   const t = copy[locale];
+  const canonical =
+    locale === "en" ? `${siteUrl}/en/terms` : `${siteUrl}/fr/terms`;
 
   return {
     title: t.metaTitle,
     description: t.metaDescription,
+    alternates: {
+      canonical,
+      languages: {
+        en: `${siteUrl}/en/terms`,
+        fr: `${siteUrl}/fr/terms`,
+        "x-default": `${siteUrl}/en/terms`,
+      },
+    },
+    openGraph: {
+      type: "article",
+      url: canonical,
+      title: t.metaTitle,
+      description: t.metaDescription,
+    },
+    twitter: {
+      card: "summary",
+      title: t.metaTitle,
+      description: t.metaDescription,
+    },
   };
 }
 
