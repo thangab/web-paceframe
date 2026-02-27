@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     template: "%s | PaceFrame",
   },
   description:
-    "PaceFrame helps athletes turn activity data into bold, shareable visuals designed for social posts and personal highlights.",
+    "PaceFrame helps athletes turn activity data into bold visuals made for social sharing, including Instagram and TikTok stories, with connection via Strava or Apple Health.",
 };
 
 const GA_MEASUREMENT_ID = "G-37DXQ7QBM8";

@@ -30,12 +30,12 @@ const copy: Record<
   en: {
     metaTitle: "PaceFrame - Turn Activities Into Shareable Visuals",
     metaDescription:
-      "PaceFrame helps athletes transform activity stats into clean, high-impact visuals ready for social sharing in seconds.",
+      "PaceFrame helps athletes transform activity stats into clean, high-impact visuals for social sharing, including Instagram and TikTok stories, with connection via Strava or Apple Health.",
     comingSoon: "Coming Soon",
     title: "PaceFrame is launching",
     titleAccent: "very soon",
     subtitle:
-      "A new way to turn your sports activities into bold visuals ready to share. The app is currently being finalized.",
+      "A new way to turn your sports activities into bold visuals built for social sharing, including Instagram and TikTok stories. The app is currently being finalized.",
     heroCta: "Join the waitlist",
     launchStatus: "Launch Status",
     waitlistOpen: "Waitlist is open",
@@ -50,12 +50,12 @@ const copy: Record<
   fr: {
     metaTitle: "PaceFrame - Transforme Tes Activites En Visuels",
     metaDescription:
-      "PaceFrame permet aux sportifs de transformer leurs stats d'activite en visuels impactants, prets a partager en quelques secondes.",
+      "PaceFrame permet aux sportifs de transformer leurs stats d'activite en visuels impactants pour les reseaux sociaux, notamment les stories Instagram et TikTok, avec connexion via Strava ou Apple Health.",
     comingSoon: "Coming Soon",
     title: "PaceFrame arrive",
     titleAccent: "tres bientot",
     subtitle:
-      "Une nouvelle facon de transformer tes activites sportives en visuels forts et prets a partager. L'application est en cours de finalisation.",
+      "Une nouvelle facon de transformer tes activites sportives en visuels forts, penses pour les reseaux sociaux, notamment les stories Instagram et TikTok. L'application est en cours de finalisation.",
     heroCta: "Rejoindre la liste d'attente",
     launchStatus: "Etat du lancement",
     waitlistOpen: "Liste d'attente ouverte",
