@@ -50,9 +50,9 @@ const copy: Record<
     bullet1: "App in final polishing",
     bullet2: "Progressive access by email",
     bullet3: "Direct support: contact@paceframe.app",
-    templatesTitle: "Template Examples",
+    templatesTitle: "Generated Visuals",
     templatesSubtitle:
-      "These are examples of templates already applied to real activities.",
+      "Real activity visuals generated automatically from PaceFrame styles.",
     templatesBody:
       "Each visual is auto-generated from your activity data. PaceFrame formats the key stats into modern story-ready layouts so you can share instantly on social media.",
     notAvailable: "The app is not available yet",
@@ -75,9 +75,9 @@ const copy: Record<
     bullet1: "Application en finalisation",
     bullet2: "Acces progressif par email",
     bullet3: "Support direct: contact@paceframe.app",
-    templatesTitle: "Exemples de Templates",
+    templatesTitle: "Visuels Generes",
     templatesSubtitle:
-      "Ce sont des exemples de templates deja appliques a de vraies activites.",
+      "Des visuels d'activite reels, generes automatiquement avec les styles PaceFrame.",
     templatesBody:
       "Chaque visuel est genere automatiquement a partir de tes donnees d'activite. PaceFrame met en forme les stats importantes dans des layouts modernes prets pour les stories.",
     notAvailable: "L'app n'est pas encore disponible",
