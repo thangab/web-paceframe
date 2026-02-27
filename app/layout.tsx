@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     template: "%s | PaceFrame",
   },
   description:
-    "PaceFrame transforms your Strava activities into clean, shareable visual summaries.",
+    "PaceFrame helps athletes turn activity data into bold, shareable visuals designed for social posts and personal highlights.",
 };
 
 export default function RootLayout({
