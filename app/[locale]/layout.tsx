@@ -40,7 +40,7 @@ export default async function LocaleLayout({
 
   return (
     <main className="min-h-screen bg-[#131B2E] text-white">
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 pb-8 pt-8 md:px-10 md:pt-12">
+      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 pb-8 pt-6 sm:px-6 md:px-10 md:pt-12">
         <Link href={`/${locale}`} className="flex items-center gap-3">
           <Image
             src="/paceframe-icon.png"
@@ -54,7 +54,7 @@ export default async function LocaleLayout({
             PaceFrame
           </span>
         </Link>
-        <div className="flex items-center gap-4 text-sm">
+        <div className="flex items-center justify-end gap-3 text-sm">
           <div className="inline-flex items-center rounded-xl border border-white/15 bg-white/5 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur">
             <Link
               href="/en"
@@ -77,21 +77,15 @@ export default async function LocaleLayout({
               FR
             </Link>
           </div>
-          <a
-            href="mailto:contact@paceframe.app"
-            className="text-white/80 transition hover:text-[#D4FF54]"
-          >
-            contact@paceframe.app
-          </a>
         </div>
       </div>
 
       {children}
 
-      <div className="mx-auto w-full max-w-6xl border-t border-white/10 px-6 py-6 text-sm text-white/65 md:px-10">
+      <div className="mx-auto w-full max-w-6xl border-t border-white/10 px-4 py-6 text-sm text-white/65 sm:px-6 md:px-10">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p>Support: contact@paceframe.app</p>
-          <div className="flex items-center gap-5">
+          <p className="break-all sm:break-normal">Support: contact@paceframe.app</p>
+          <div className="flex flex-wrap items-center gap-4 sm:gap-5">
             <Link
               href={`/${locale}/privacy-policy`}
               className="transition hover:text-[#D4FF54]"

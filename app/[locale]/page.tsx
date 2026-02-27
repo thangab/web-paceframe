@@ -96,7 +96,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
   const t = copy[locale];
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-14 px-6 pb-10 md:px-10">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 overflow-x-hidden px-4 pb-10 sm:gap-14 sm:px-6 md:px-10 lg:overflow-x-visible">
         <section className="grid items-center gap-10 lg:grid-cols-2">
           <div className="space-y-6">
             <p className="inline-block rounded-full border border-[#D4FF54]/40 bg-[#D4FF54]/10 px-3 py-1 text-xs font-semibold tracking-[0.2em] text-[#D4FF54] uppercase">
@@ -119,10 +119,10 @@ export default async function LocaleHomePage({ params }: PageProps) {
             </div>
           </div>
 
-          <div className="relative">
+          <div className="relative overflow-hidden rounded-3xl lg:overflow-visible">
             <div className="absolute -top-8 -left-6 h-32 w-32 rounded-full bg-[#D4FF54]/25 blur-3xl" />
             <div className="absolute -right-8 -bottom-8 h-36 w-36 rounded-full bg-[#38599f]/40 blur-3xl" />
-            <div className="relative rounded-3xl border border-white/15 bg-white/5 p-6 backdrop-blur">
+            <div className="relative rounded-3xl border border-white/15 bg-white/5 p-5 backdrop-blur sm:p-6">
               <p className="text-xs font-semibold tracking-[0.22em] text-[#D4FF54] uppercase">
                 {t.launchStatus}
               </p>
@@ -150,7 +150,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
 
         <section
           id="get-started"
-          className="rounded-3xl border border-[#D4FF54]/25 bg-gradient-to-r from-[#1A2540] to-[#101726] p-8"
+          className="rounded-3xl border border-[#D4FF54]/25 bg-gradient-to-r from-[#1A2540] to-[#101726] p-5 sm:p-8"
         >
           <div className="flex flex-col gap-5">
             <div>
