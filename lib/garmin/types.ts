@@ -1,8 +1,14 @@
 export type GarminPingActivity = {
   userId?: string;
+  userID?: string;
+  userid?: string;
   callbackURL?: string;
   callbackUrl?: string;
   callback_url?: string;
+  callbackURI?: string;
+  callbackUri?: string;
+  callback_uri?: string;
+  [key: string]: unknown;
 };
 
 export type GarminPingPayload = {
@@ -10,6 +16,12 @@ export type GarminPingPayload = {
   activityDetails?: GarminPingActivity[];
   activityFiles?: GarminPingActivity[];
   moveIQActivities?: GarminPingActivity[];
+  callbackURL?: string;
+  callbackUrl?: string;
+  callback_url?: string;
+  callbackURI?: string;
+  callbackUri?: string;
+  callback_uri?: string;
 };
 
 export type GarminSummaryActivity = {

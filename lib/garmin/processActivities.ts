@@ -238,9 +238,8 @@ export async function processGarminActivities(params: {
 }
 
 async function processSinglePingActivity(activity: GarminPingActivity) {
-  const userId = activity.userId;
-  const callbackURL =
-    activity.callbackURL ?? activity.callbackUrl ?? activity.callback_url;
+  const userId = extractUserId(activity);
+  const callbackURL = extractCallbackUrl(activity);
 
   if (!userId || !callbackURL) {
     console.warn("Garmin ping activity missing required fields", {
@@ -281,6 +280,12 @@ async function processSinglePingActivity(activity: GarminPingActivity) {
 
   const payload = (await callbackResponse.json()) as GarminCallbackPayload;
 
+  console.log("Garmin callback raw payload", {
+    userId: knownGarminUserId,
+    callbackURL,
+    payload,
+  });
+
   console.log("Garmin callback fetched", {
     userId: knownGarminUserId,
     callbackURL,
@@ -312,6 +317,56 @@ async function processSinglePingActivity(activity: GarminPingActivity) {
   }
 }
 
+function extractUserId(activity: GarminPingActivity) {
+  const direct =
+    activity.userId ?? activity.userID ?? activity.userid ?? undefined;
+  if (typeof direct === "string" && direct.trim().length > 0) {
+    return direct.trim();
+  }
+
+  for (const [key, value] of Object.entries(activity)) {
+    const normalizedKey = key.toLowerCase();
+    if (normalizedKey === "userid" || normalizedKey === "user_id") {
+      if (typeof value === "string" && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function extractCallbackUrl(source: Record<string, unknown>) {
+  const directCandidates = [
+    source.callbackURL,
+    source.callbackUrl,
+    source.callback_url,
+    source.callbackURI,
+    source.callbackUri,
+    source.callback_uri,
+  ];
+
+  for (const candidate of directCandidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  for (const [key, value] of Object.entries(source)) {
+    const normalizedKey = key.toLowerCase();
+    if (
+      normalizedKey.includes("callback") &&
+      (normalizedKey.includes("url") || normalizedKey.includes("uri")) &&
+      typeof value === "string" &&
+      value.trim().length > 0
+    ) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+}
+
 export async function processGarminPingPayload(payload: GarminPingPayload) {
   const activities = Array.isArray(payload.activities) ? payload.activities : [];
   const activityDetails = Array.isArray(payload.activityDetails)
@@ -324,12 +379,17 @@ export async function processGarminPingPayload(payload: GarminPingPayload) {
     ? payload.moveIQActivities
     : [];
 
+  const payloadCallbackUrl = extractCallbackUrl(payload as Record<string, unknown>);
   const pingActivities = [
     ...activities,
     ...activityDetails,
     ...activityFiles,
     ...moveIQActivities,
-  ];
+  ].map((activity) => {
+    const callbackURL =
+      extractCallbackUrl(activity as Record<string, unknown>) ?? payloadCallbackUrl;
+    return callbackURL ? { ...activity, callbackURL } : activity;
+  });
 
   console.log("Garmin ping received", {
     activitiesCount: activities.length,
