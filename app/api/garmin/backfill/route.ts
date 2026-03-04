@@ -7,6 +7,7 @@ const GARMIN_OAUTH_TOKEN_URL =
   'https://connectapi.garmin.com/di-oauth2-service/oauth/token';
 const BACKFILL_PATH = 'rest/backfill/activities';
 const EIGHT_DAYS_IN_SECONDS = 8 * 24 * 60 * 60;
+const BACKFILL_JITTER_MAX_SECONDS = 180;
 
 type BackfillRequestBody = {
   garmin_user_id?: string;
@@ -219,13 +220,15 @@ export async function POST(request: NextRequest) {
     }
 
     const now = Math.floor(Date.now() / 1000);
-    const eightDaysAgo = now - EIGHT_DAYS_IN_SECONDS;
+    const jitter = Math.floor(Math.random() * (BACKFILL_JITTER_MAX_SECONDS + 1));
+    const backfillEnd = now - jitter;
+    const eightDaysAgo = backfillEnd - EIGHT_DAYS_IN_SECONDS;
 
     let accessToken = connection.access_token;
     let response = await callBackfill({
       baseUrl,
       accessToken,
-      now,
+      now: backfillEnd,
       eightDaysAgo,
     });
 
@@ -245,7 +248,7 @@ export async function POST(request: NextRequest) {
           response = await callBackfill({
             baseUrl,
             accessToken,
-            now,
+            now: backfillEnd,
             eightDaysAgo,
           });
         }
