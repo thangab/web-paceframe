@@ -6,8 +6,6 @@ const DEFAULT_GARMIN_API_BASE_URL = 'https://apis.garmin.com/wellness-api';
 const GARMIN_OAUTH_TOKEN_URL =
   'https://connectapi.garmin.com/di-oauth2-service/oauth/token';
 const BACKFILL_PATH = 'rest/backfill/activities';
-const EIGHT_DAYS_IN_SECONDS = 8 * 24 * 60 * 60;
-const BACKFILL_JITTER_MAX_SECONDS = 180;
 
 type BackfillRequestBody = {
   garmin_user_id?: string;
@@ -120,8 +118,8 @@ async function updateGarminUserToken(params: {
 async function callBackfill(params: {
   baseUrl: string;
   accessToken: string;
-  now: number;
-  eightDaysAgo: number;
+  summaryStartTimeInSeconds: number;
+  summaryEndTimeInSeconds: number;
 }) {
   const normalizedBase = params.baseUrl.endsWith('/')
     ? params.baseUrl
@@ -136,9 +134,12 @@ async function callBackfill(params: {
 
   url.searchParams.set(
     'summaryStartTimeInSeconds',
-    params.eightDaysAgo.toString(),
+    params.summaryStartTimeInSeconds.toString(),
   );
-  url.searchParams.set('summaryEndTimeInSeconds', params.now.toString());
+  url.searchParams.set(
+    'summaryEndTimeInSeconds',
+    params.summaryEndTimeInSeconds.toString(),
+  );
 
   return fetch(url.toString(), {
     method: 'GET',
@@ -219,17 +220,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const now = Math.floor(Date.now() / 1000);
-    const jitter = Math.floor(Math.random() * (BACKFILL_JITTER_MAX_SECONDS + 1));
-    const backfillEnd = now - jitter;
-    const eightDaysAgo = backfillEnd - EIGHT_DAYS_IN_SECONDS;
+    const currentDate = new Date();
+    const currentMonthStart = new Date(
+      Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth(), 1, 0, 0, 0),
+    );
+    const previousMonthStart = new Date(
+      Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth() - 1, 1, 0, 0, 0),
+    );
+
+    const summaryStartTimeInSeconds = Math.floor(
+      previousMonthStart.getTime() / 1000,
+    );
+    const summaryEndTimeInSeconds =
+      Math.floor(currentMonthStart.getTime() / 1000) - 1;
 
     let accessToken = connection.access_token;
     let response = await callBackfill({
       baseUrl,
       accessToken,
-      now: backfillEnd,
-      eightDaysAgo,
+      summaryStartTimeInSeconds,
+      summaryEndTimeInSeconds,
     });
 
     if (response.status === 401 && connection.refresh_token) {
@@ -248,8 +258,8 @@ export async function POST(request: NextRequest) {
           response = await callBackfill({
             baseUrl,
             accessToken,
-            now: backfillEnd,
-            eightDaysAgo,
+            summaryStartTimeInSeconds,
+            summaryEndTimeInSeconds,
           });
         }
       } catch (refreshError) {
@@ -260,6 +270,8 @@ export async function POST(request: NextRequest) {
     console.log('Garmin backfill response', {
       garminUserId,
       status: response.status,
+      summaryStartTimeInSeconds,
+      summaryEndTimeInSeconds,
     });
 
     if (!(response.status === 202 || response.status === 200 || response.status === 409)) {
