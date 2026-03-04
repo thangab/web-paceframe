@@ -1,170 +1,266 @@
-import { createHmac, randomBytes } from 'crypto';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
-const DEFAULT_GARMIN_API_BASE_URL = 'https://healthapi.garmin.com/wellness-api';
+const DEFAULT_GARMIN_API_BASE_URL = 'https://apis.garmin.com/wellness-api';
+const GARMIN_OAUTH_TOKEN_URL =
+  'https://connectapi.garmin.com/di-oauth2-service/oauth/token';
 const BACKFILL_PATH = 'rest/backfill/activities';
 const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
 
-function percentEncode(value: string) {
-  return encodeURIComponent(value).replace(
-    /[!'()*]/g,
-    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
-  );
-}
+type BackfillRequestBody = {
+  garmin_user_id?: string;
+};
 
-function buildOAuth1Header(params: {
-  method: 'GET' | 'POST';
-  url: string;
-  queryParams: Record<string, string>;
-  consumerKey: string;
-  consumerSecret: string;
-  token?: string;
-  tokenSecret?: string;
-}) {
-  const oauthParams: Record<string, string> = {
-    oauth_consumer_key: params.consumerKey,
-    oauth_nonce: randomBytes(16).toString('hex'),
-    oauth_signature_method: 'HMAC-SHA1',
-    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
-    oauth_version: '1.0',
-  };
+type GarminUserTokenRow = {
+  garmin_user_id: string;
+  access_token: string;
+  refresh_token: string | null;
+};
 
-  if (params.token) {
-    oauthParams.oauth_token = params.token;
+type GarminRefreshTokenResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  refresh_token_expires_in?: number;
+  token_type?: string;
+  scope?: string;
+};
+
+function getSupabaseConfig() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const garminUsersTable = process.env.SUPABASE_GARMIN_USERS_TABLE ?? 'garmin_users';
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.');
   }
 
-  const signatureParams = {
-    ...params.queryParams,
-    ...oauthParams,
-  };
-
-  const normalized = Object.entries(signatureParams)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${percentEncode(key)}=${percentEncode(value)}`)
-    .join('&');
-
-  const signatureBaseString = [
-    params.method.toUpperCase(),
-    percentEncode(params.url),
-    percentEncode(normalized),
-  ].join('&');
-
-  const signingKey = `${percentEncode(params.consumerSecret)}&${percentEncode(
-    params.tokenSecret ?? '',
-  )}`;
-
-  const signature = createHmac('sha1', signingKey)
-    .update(signatureBaseString)
-    .digest('base64');
-
-  const authParams = {
-    ...oauthParams,
-    oauth_signature: signature,
-  };
-
-  const authHeader = `OAuth ${Object.entries(authParams)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${percentEncode(key)}="${percentEncode(value)}"`)
-    .join(', ')}`;
-
-  return authHeader;
+  return { supabaseUrl, serviceRoleKey, garminUsersTable };
 }
 
-export async function POST() {
+async function loadGarminUserToken(garminUserId: string) {
+  const { supabaseUrl, serviceRoleKey, garminUsersTable } = getSupabaseConfig();
+  const lookupUrl =
+    `${supabaseUrl}/rest/v1/${garminUsersTable}` +
+    `?select=garmin_user_id,access_token,refresh_token` +
+    `&garmin_user_id=eq.${encodeURIComponent(garminUserId)}` +
+    '&limit=1';
+
+  const response = await fetch(lookupUrl, {
+    method: 'GET',
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Accept: 'application/json',
+    },
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      `Failed to load Garmin user token. status=${response.status}; body=${details.slice(0, 500)}`,
+    );
+  }
+
+  const rows = (await response.json()) as GarminUserTokenRow[];
+  return rows[0] ?? null;
+}
+
+async function updateGarminUserToken(params: {
+  garminUserId: string;
+  accessToken: string;
+  refreshToken: string | null;
+  expiresIn?: number;
+  refreshTokenExpiresIn?: number;
+}) {
+  const { supabaseUrl, serviceRoleKey, garminUsersTable } = getSupabaseConfig();
+  const nowIso = new Date().toISOString();
+  const expiresAt = params.expiresIn
+    ? new Date(Date.now() + params.expiresIn * 1000).toISOString()
+    : null;
+  const refreshTokenExpiresAt = params.refreshTokenExpiresIn
+    ? new Date(Date.now() + params.refreshTokenExpiresIn * 1000).toISOString()
+    : null;
+
+  const response = await fetch(
+    `${supabaseUrl}/rest/v1/${garminUsersTable}?on_conflict=garmin_user_id`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify([
+        {
+          garmin_user_id: params.garminUserId,
+          access_token: params.accessToken,
+          refresh_token: params.refreshToken,
+          expires_at: expiresAt,
+          refresh_token_expires_at: refreshTokenExpiresAt,
+          updated_at: nowIso,
+        },
+      ]),
+      cache: 'no-store',
+    },
+  );
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      `Failed to update Garmin user token. status=${response.status}; body=${details.slice(0, 500)}`,
+    );
+  }
+}
+
+async function callBackfill(params: {
+  baseUrl: string;
+  accessToken: string;
+  now: number;
+  sevenDaysAgo: number;
+}) {
+  const normalizedBase = params.baseUrl.endsWith('/')
+    ? params.baseUrl
+    : `${params.baseUrl}/`;
+  const url = new URL(BACKFILL_PATH, normalizedBase);
+
+  if (!url.hostname.includes('garmin.com')) {
+    throw new Error(
+      `GARMIN_API_BASE_URL must point to Garmin. Resolved URL: ${url.toString()}`,
+    );
+  }
+
+  url.searchParams.set(
+    'summaryStartTimeInSeconds',
+    params.sevenDaysAgo.toString(),
+  );
+  url.searchParams.set('summaryEndTimeInSeconds', params.now.toString());
+
+  return fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${params.accessToken}`,
+      Accept: 'application/json',
+    },
+    cache: 'no-store',
+  });
+}
+
+async function refreshGarminAccessToken(refreshToken: string) {
+  const clientId = process.env.GARMIN_CLIENT_ID;
+  const clientSecret = process.env.GARMIN_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    return null;
+  }
+
+  const body = new URLSearchParams();
+  body.set('grant_type', 'refresh_token');
+  body.set('client_id', clientId);
+  body.set('client_secret', clientSecret);
+  body.set('refresh_token', refreshToken);
+
+  const response = await fetch(GARMIN_OAUTH_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: body.toString(),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      `Failed to refresh Garmin token. status=${response.status}; body=${details.slice(0, 500)}`,
+    );
+  }
+
+  const payload = (await response.json()) as GarminRefreshTokenResponse;
+
+  if (!payload.access_token) {
+    throw new Error('Garmin refresh response missing access_token.');
+  }
+
+  return payload;
+}
+
+export async function POST(request: NextRequest) {
   try {
+    const body = (await request.json().catch(() => null)) as BackfillRequestBody | null;
+    const garminUserId = body?.garmin_user_id?.trim();
+
+    if (!garminUserId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Missing garmin_user_id in request body.',
+        },
+        { status: 400 },
+      );
+    }
+
     const baseUrl =
       process.env.GARMIN_API_BASE_URL ?? DEFAULT_GARMIN_API_BASE_URL;
 
-    const consumerKey = process.env.GARMIN_CLIENT_ID;
-    const consumerSecret = process.env.GARMIN_CLIENT_SECRET;
-    const token = process.env.GARMIN_TOKEN;
-    const tokenSecret = process.env.GARMIN_TOKEN_SECRET;
+    const connection = await loadGarminUserToken(garminUserId);
 
-    if (!consumerKey || !consumerSecret) {
-      console.error('Garmin backfill missing credentials');
-
+    if (!connection || !connection.access_token) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Missing GARMIN_CLIENT_ID/GARMIN_CLIENT_SECRET.',
+          error: 'Garmin user not connected or token missing.',
         },
-        { status: 500 },
+        { status: 404 },
       );
     }
 
-    // Calculate timestamps
     const now = Math.floor(Date.now() / 1000);
     const sevenDaysAgo = now - SEVEN_DAYS_IN_SECONDS;
 
-    const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-    const url = new URL(BACKFILL_PATH, normalizedBase);
+    let accessToken = connection.access_token;
+    let response = await callBackfill({
+      baseUrl,
+      accessToken,
+      now,
+      sevenDaysAgo,
+    });
 
-    if (!url.hostname.includes('garmin.com')) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            'GARMIN_API_BASE_URL must point to a Garmin domain (e.g. https://healthapi.garmin.com/wellness-api).',
-          resolvedUrl: url.toString(),
-        },
-        { status: 500 },
-      );
+    if (response.status === 401 && connection.refresh_token) {
+      try {
+        const refreshed = await refreshGarminAccessToken(connection.refresh_token);
+        if (refreshed?.access_token) {
+          accessToken = refreshed.access_token;
+          await updateGarminUserToken({
+            garminUserId,
+            accessToken: refreshed.access_token,
+            refreshToken: refreshed.refresh_token ?? connection.refresh_token,
+            expiresIn: refreshed.expires_in,
+            refreshTokenExpiresIn: refreshed.refresh_token_expires_in,
+          });
+
+          response = await callBackfill({
+            baseUrl,
+            accessToken,
+            now,
+            sevenDaysAgo,
+          });
+        }
+      } catch (refreshError) {
+        console.error('Garmin backfill refresh failed', refreshError);
+      }
     }
 
-    const queryParams = {
-      summaryStartTimeInSeconds: sevenDaysAgo.toString(),
-      summaryEndTimeInSeconds: now.toString(),
-    };
-
-    url.searchParams.set(
-      'summaryStartTimeInSeconds',
-      queryParams.summaryStartTimeInSeconds,
-    );
-    url.searchParams.set(
-      'summaryEndTimeInSeconds',
-      queryParams.summaryEndTimeInSeconds,
-    );
-
-    const authorizationHeader = buildOAuth1Header({
-      method: 'GET',
-      url: new URL(BACKFILL_PATH, normalizedBase).toString(),
-      queryParams,
-      consumerKey,
-      consumerSecret,
-      token,
-      tokenSecret,
-    });
-
-    console.log('Garmin backfill triggered', {
-      summaryStartTimeInSeconds: sevenDaysAgo,
-      summaryEndTimeInSeconds: now,
-      url: url.toString(),
-    });
-
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        Authorization: authorizationHeader,
-        Accept: 'application/json',
-      },
-      cache: 'no-store',
-    });
-
     console.log('Garmin backfill response', {
+      garminUserId,
       status: response.status,
     });
 
-    // Garmin normally returns 202 Accepted
     if (!(response.status === 202 || response.status === 200)) {
       const details = await response.text();
-
-      console.error('Garmin backfill failed', {
-        status: response.status,
-        body: details.slice(0, 1000),
-      });
-
       return NextResponse.json(
         {
           success: false,
@@ -176,16 +272,9 @@ export async function POST() {
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      message:
-        'Garmin backfill requested successfully. Activities will be delivered via the ping webhook.',
-      summaryStartTimeInSeconds: sevenDaysAgo,
-      summaryEndTimeInSeconds: now,
-    });
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Garmin backfill route error', error);
-
     return NextResponse.json(
       {
         success: false,
