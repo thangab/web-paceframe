@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from 'crypto';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -6,9 +7,69 @@ const DEFAULT_GARMIN_API_BASE_URL = 'https://healthapi.garmin.com/wellness-api';
 const BACKFILL_PATH = 'rest/backfill/activities';
 const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
 
-function toBasicAuthHeader(consumerKey: string, consumerSecret: string) {
-  const credentials = `${consumerKey}:${consumerSecret}`;
-  return `Basic ${Buffer.from(credentials).toString('base64')}`;
+function percentEncode(value: string) {
+  return encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+function buildOAuth1Header(params: {
+  method: 'GET' | 'POST';
+  url: string;
+  queryParams: Record<string, string>;
+  consumerKey: string;
+  consumerSecret: string;
+  token?: string;
+  tokenSecret?: string;
+}) {
+  const oauthParams: Record<string, string> = {
+    oauth_consumer_key: params.consumerKey,
+    oauth_nonce: randomBytes(16).toString('hex'),
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_version: '1.0',
+  };
+
+  if (params.token) {
+    oauthParams.oauth_token = params.token;
+  }
+
+  const signatureParams = {
+    ...params.queryParams,
+    ...oauthParams,
+  };
+
+  const normalized = Object.entries(signatureParams)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${percentEncode(key)}=${percentEncode(value)}`)
+    .join('&');
+
+  const signatureBaseString = [
+    params.method.toUpperCase(),
+    percentEncode(params.url),
+    percentEncode(normalized),
+  ].join('&');
+
+  const signingKey = `${percentEncode(params.consumerSecret)}&${percentEncode(
+    params.tokenSecret ?? '',
+  )}`;
+
+  const signature = createHmac('sha1', signingKey)
+    .update(signatureBaseString)
+    .digest('base64');
+
+  const authParams = {
+    ...oauthParams,
+    oauth_signature: signature,
+  };
+
+  const authHeader = `OAuth ${Object.entries(authParams)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${percentEncode(key)}="${percentEncode(value)}"`)
+    .join(', ')}`;
+
+  return authHeader;
 }
 
 export async function POST() {
@@ -16,10 +77,10 @@ export async function POST() {
     const baseUrl =
       process.env.GARMIN_API_BASE_URL ?? DEFAULT_GARMIN_API_BASE_URL;
 
-    const consumerKey =
-      process.env.GARMIN_CONSUMER_KEY ?? process.env.GARMIN_CLIENT_ID;
-    const consumerSecret =
-      process.env.GARMIN_CONSUMER_SECRET ?? process.env.GARMIN_CLIENT_SECRET;
+    const consumerKey = process.env.GARMIN_CLIENT_ID;
+    const consumerSecret = process.env.GARMIN_CLIENT_SECRET;
+    const token = process.env.GARMIN_TOKEN;
+    const tokenSecret = process.env.GARMIN_TOKEN_SECRET;
 
     if (!consumerKey || !consumerSecret) {
       console.error('Garmin backfill missing credentials');
@@ -27,8 +88,7 @@ export async function POST() {
       return NextResponse.json(
         {
           success: false,
-          error:
-            'Missing GARMIN_CONSUMER_KEY/GARMIN_CONSUMER_SECRET (or GARMIN_CLIENT_ID/GARMIN_CLIENT_SECRET fallback).',
+          error: 'Missing GARMIN_CLIENT_ID/GARMIN_CLIENT_SECRET.',
         },
         { status: 500 },
       );
@@ -53,9 +113,29 @@ export async function POST() {
       );
     }
 
-    url.searchParams.set('summaryStartTimeInSeconds', sevenDaysAgo.toString());
+    const queryParams = {
+      summaryStartTimeInSeconds: sevenDaysAgo.toString(),
+      summaryEndTimeInSeconds: now.toString(),
+    };
 
-    url.searchParams.set('summaryEndTimeInSeconds', now.toString());
+    url.searchParams.set(
+      'summaryStartTimeInSeconds',
+      queryParams.summaryStartTimeInSeconds,
+    );
+    url.searchParams.set(
+      'summaryEndTimeInSeconds',
+      queryParams.summaryEndTimeInSeconds,
+    );
+
+    const authorizationHeader = buildOAuth1Header({
+      method: 'GET',
+      url: new URL(BACKFILL_PATH, normalizedBase).toString(),
+      queryParams,
+      consumerKey,
+      consumerSecret,
+      token,
+      tokenSecret,
+    });
 
     console.log('Garmin backfill triggered', {
       summaryStartTimeInSeconds: sevenDaysAgo,
@@ -66,7 +146,7 @@ export async function POST() {
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: {
-        Authorization: toBasicAuthHeader(consumerKey, consumerSecret),
+        Authorization: authorizationHeader,
         Accept: 'application/json',
       },
       cache: 'no-store',
