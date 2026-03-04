@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 
 const DEFAULT_GARMIN_API_BASE_URL = 'https://healthapi.garmin.com/wellness-api';
-const BACKFILL_PATH = '/rest/backfill/activities';
+const BACKFILL_PATH = 'rest/backfill/activities';
 const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
 
 function toBasicAuthHeader(consumerKey: string, consumerSecret: string) {
@@ -16,8 +16,10 @@ export async function POST() {
     const baseUrl =
       process.env.GARMIN_API_BASE_URL ?? DEFAULT_GARMIN_API_BASE_URL;
 
-    const consumerKey = process.env.GARMIN_CLIENT_ID;
-    const consumerSecret = process.env.GARMIN_CLIENT_SECRET;
+    const consumerKey =
+      process.env.GARMIN_CONSUMER_KEY ?? process.env.GARMIN_CLIENT_ID;
+    const consumerSecret =
+      process.env.GARMIN_CONSUMER_SECRET ?? process.env.GARMIN_CLIENT_SECRET;
 
     if (!consumerKey || !consumerSecret) {
       console.error('Garmin backfill missing credentials');
@@ -25,7 +27,8 @@ export async function POST() {
       return NextResponse.json(
         {
           success: false,
-          error: 'Missing GARMIN_CLIENT_ID or GARMIN_CLIENT_SECRET.',
+          error:
+            'Missing GARMIN_CONSUMER_KEY/GARMIN_CONSUMER_SECRET (or GARMIN_CLIENT_ID/GARMIN_CLIENT_SECRET fallback).',
         },
         { status: 500 },
       );
@@ -35,7 +38,20 @@ export async function POST() {
     const now = Math.floor(Date.now() / 1000);
     const sevenDaysAgo = now - SEVEN_DAYS_IN_SECONDS;
 
-    const url = new URL(BACKFILL_PATH, baseUrl);
+    const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+    const url = new URL(BACKFILL_PATH, normalizedBase);
+
+    if (!url.hostname.includes('garmin.com')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'GARMIN_API_BASE_URL must point to a Garmin domain (e.g. https://healthapi.garmin.com/wellness-api).',
+          resolvedUrl: url.toString(),
+        },
+        { status: 500 },
+      );
+    }
 
     url.searchParams.set('summaryStartTimeInSeconds', sevenDaysAgo.toString());
 
