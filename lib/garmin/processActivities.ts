@@ -189,6 +189,13 @@ export async function processGarminActivities(params: {
 }) {
   const { userId, summaryType, activities } = params;
 
+  console.log("Garmin activities raw", {
+    userId,
+    summaryType,
+    count: activities.length,
+    activities,
+  });
+
   const normalized = activities
     .map((activity) => normalizeGarminActivity(userId, activity))
     .filter((activity): activity is NormalizedActivity => activity !== null);
@@ -241,7 +248,7 @@ async function processSinglePingActivity(activity: GarminPingActivity) {
   const userId = extractUserId(activity);
   const callbackURL = extractCallbackUrl(activity);
 
-  if (!userId || !callbackURL) {
+  if (!userId) {
     console.warn("Garmin ping activity missing required fields", {
       hasUserId: Boolean(userId),
       hasCallbackURL: Boolean(callbackURL),
@@ -260,49 +267,68 @@ async function processSinglePingActivity(activity: GarminPingActivity) {
     return;
   }
 
-  const callbackResponse = await fetch(callbackURL, {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-    },
-    cache: "no-store",
-  });
+  let summaryGroups: Array<{ summaryType: string; items: GarminSummaryActivity[] }> = [];
 
-  if (!callbackResponse.ok) {
-    const details = await callbackResponse.text();
-    throw new Error(
-      `Garmin callback fetch failed. status=${callbackResponse.status}; body=${details.slice(
-        0,
-        1000
-      )}`
-    );
+  if (callbackURL) {
+    const callbackResponse = await fetch(callbackURL, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+    });
+
+    if (!callbackResponse.ok) {
+      const details = await callbackResponse.text();
+      throw new Error(
+        `Garmin callback fetch failed. status=${callbackResponse.status}; body=${details.slice(
+          0,
+          1000
+        )}`
+      );
+    }
+
+    const payload = (await callbackResponse.json()) as GarminCallbackPayload;
+
+    console.log("Garmin callback raw payload", {
+      userId: knownGarminUserId,
+      callbackURL,
+      payload,
+    });
+
+    console.log("Garmin callback fetched", {
+      userId: knownGarminUserId,
+      callbackURL,
+      counts: {
+        activities: payload.activities?.length ?? 0,
+        activityDetails: payload.activityDetails?.length ?? 0,
+        activityFiles: payload.activityFiles?.length ?? 0,
+        moveIQActivities: payload.moveIQActivities?.length ?? 0,
+      },
+    });
+
+    summaryGroups = [
+      { summaryType: "activities", items: payload.activities ?? [] },
+      { summaryType: "activityDetails", items: payload.activityDetails ?? [] },
+      { summaryType: "activityFiles", items: payload.activityFiles ?? [] },
+      { summaryType: "moveIQActivities", items: payload.moveIQActivities ?? [] },
+    ];
+  } else {
+    const inlineActivities = extractInlineActivitiesFromPing(activity);
+
+    console.log("Garmin ping inline payload detected", {
+      userId: knownGarminUserId,
+      keys: Object.keys(activity),
+      inlineCount: inlineActivities.length,
+    });
+
+    summaryGroups = [
+      {
+        summaryType: "activityDetails",
+        items: inlineActivities,
+      },
+    ];
   }
-
-  const payload = (await callbackResponse.json()) as GarminCallbackPayload;
-
-  console.log("Garmin callback raw payload", {
-    userId: knownGarminUserId,
-    callbackURL,
-    payload,
-  });
-
-  console.log("Garmin callback fetched", {
-    userId: knownGarminUserId,
-    callbackURL,
-    counts: {
-      activities: payload.activities?.length ?? 0,
-      activityDetails: payload.activityDetails?.length ?? 0,
-      activityFiles: payload.activityFiles?.length ?? 0,
-      moveIQActivities: payload.moveIQActivities?.length ?? 0,
-    },
-  });
-
-  const summaryGroups: Array<{ summaryType: string; items: GarminSummaryActivity[] }> = [
-    { summaryType: "activities", items: payload.activities ?? [] },
-    { summaryType: "activityDetails", items: payload.activityDetails ?? [] },
-    { summaryType: "activityFiles", items: payload.activityFiles ?? [] },
-    { summaryType: "moveIQActivities", items: payload.moveIQActivities ?? [] },
-  ];
 
   for (const group of summaryGroups) {
     if (group.items.length === 0) {
@@ -315,6 +341,35 @@ async function processSinglePingActivity(activity: GarminPingActivity) {
       activities: group.items,
     });
   }
+}
+
+function extractInlineActivitiesFromPing(
+  activity: GarminPingActivity
+): GarminSummaryActivity[] {
+  const summaryRaw =
+    typeof activity.summary === "object" && activity.summary !== null
+      ? (activity.summary as Record<string, unknown>)
+      : null;
+
+  const candidate: GarminSummaryActivity = summaryRaw
+    ? {
+        ...summaryRaw,
+      }
+    : ({ ...activity } as GarminSummaryActivity);
+
+  // Ensure we still have an ID field for normalization/upsert.
+  if (candidate.summaryId === undefined && activity.summaryId !== undefined) {
+    candidate.summaryId = activity.summaryId as string | number;
+  }
+  if (candidate.activityId === undefined && activity.activityId !== undefined) {
+    candidate.activityId = activity.activityId as string | number;
+  }
+
+  if (candidate.summaryId === undefined && candidate.activityId === undefined) {
+    return [];
+  }
+
+  return [candidate];
 }
 
 function extractUserId(activity: GarminPingActivity) {

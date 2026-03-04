@@ -7,8 +7,6 @@ const GARMIN_OAUTH_TOKEN_URL =
   'https://connectapi.garmin.com/di-oauth2-service/oauth/token';
 const BACKFILL_PATH = 'rest/backfill/activities';
 const DEFAULT_BACKFILL_LOOKBACK_DAYS = 7;
-const BACKFILL_WINDOW_SHIFT_SECONDS = 6 * 60 * 60;
-const BACKFILL_WINDOW_ATTEMPTS = 6;
 
 type BackfillRequestBody = {
   garmin_user_id?: string;
@@ -41,10 +39,6 @@ function parseMinStartTimeFromGarminError(details: string) {
   }
 
   return Math.floor(parsed / 1000);
-}
-
-function isDuplicateBackfillError(details: string) {
-  return /duplicate backfill/i.test(details);
 }
 
 function getSupabaseConfig() {
@@ -247,31 +241,17 @@ export async function POST(request: NextRequest) {
         ? lookbackDaysRaw
         : DEFAULT_BACKFILL_LOOKBACK_DAYS;
     const lookbackSeconds = Math.floor(lookbackDays * 24 * 60 * 60);
-    const now = Math.floor(Date.now() / 1000);
+
+    const summaryEndTimeInSeconds = Math.floor(Date.now() / 1000);
+    const summaryStartTimeInSeconds = summaryEndTimeInSeconds - lookbackSeconds;
 
     let accessToken = connection.access_token;
-    let activeWindow: {
-      summaryStartTimeInSeconds: number;
-      summaryEndTimeInSeconds: number;
-      attempt: number;
-    } | null = null;
-    let response: Response | null = null;
-    let responseDetails = '';
-
-    const firstWindowEnd = now;
-    const firstWindowStart = firstWindowEnd - lookbackSeconds;
-
-    response = await callBackfill({
+    let response = await callBackfill({
       baseUrl,
       accessToken,
-      summaryStartTimeInSeconds: firstWindowStart,
-      summaryEndTimeInSeconds: firstWindowEnd,
+      summaryStartTimeInSeconds,
+      summaryEndTimeInSeconds,
     });
-    activeWindow = {
-      summaryStartTimeInSeconds: firstWindowStart,
-      summaryEndTimeInSeconds: firstWindowEnd,
-      attempt: 1,
-    };
 
     if (response.status === 401 && connection.refresh_token) {
       try {
@@ -289,106 +269,55 @@ export async function POST(request: NextRequest) {
           response = await callBackfill({
             baseUrl,
             accessToken,
-            summaryStartTimeInSeconds: firstWindowStart,
-            summaryEndTimeInSeconds: firstWindowEnd,
+            summaryStartTimeInSeconds,
+            summaryEndTimeInSeconds,
           });
         }
       } catch (refreshError) {
         console.error('Garmin backfill refresh failed', refreshError);
       }
     }
-    for (let attempt = 1; attempt <= BACKFILL_WINDOW_ATTEMPTS; attempt += 1) {
-      if (attempt > 1) {
-        const end = now - (attempt - 1) * BACKFILL_WINDOW_SHIFT_SECONDS;
-        const start = end - lookbackSeconds;
-        response = await callBackfill({
-          baseUrl,
-          accessToken,
-          summaryStartTimeInSeconds: start,
-          summaryEndTimeInSeconds: end,
-        });
-        activeWindow = {
-          summaryStartTimeInSeconds: start,
-          summaryEndTimeInSeconds: end,
-          attempt,
-        };
-      }
 
-      if (!response || !activeWindow) {
-        break;
-      }
+    console.log('Garmin backfill response', {
+      garminUserId,
+      status: response.status,
+      summaryStartTimeInSeconds,
+      summaryEndTimeInSeconds,
+    });
 
-      console.log('Garmin backfill response', {
-        garminUserId,
-        status: response.status,
-        ...activeWindow,
-      });
-
-      if (response.status === 200 || response.status === 202) {
-        return NextResponse.json({ success: true, ...activeWindow });
-      }
-
-      responseDetails = await response.text();
-
-      if (response.status === 409 && isDuplicateBackfillError(responseDetails)) {
-        console.log('Garmin duplicate backfill window, trying older window', {
-          garminUserId,
-          attempt,
-          details: responseDetails.slice(0, 300),
-        });
-        continue;
-      }
+    if (!(response.status === 202 || response.status === 200 || response.status === 409)) {
+      const details = await response.text();
 
       // Garmin can reject old ranges with:
       // "start ... before min start time of ..."
-      // Retry once with provider min start boundary for the current window.
+      // Retry once with the provider min start boundary.
       if (response.status === 400) {
-        const minStart = parseMinStartTimeFromGarminError(responseDetails);
+        const minStart = parseMinStartTimeFromGarminError(details);
         if (
           minStart &&
-          minStart > activeWindow.summaryStartTimeInSeconds &&
-          minStart < activeWindow.summaryEndTimeInSeconds
+          minStart > summaryStartTimeInSeconds &&
+          minStart < summaryEndTimeInSeconds
         ) {
-          const adjustedResponse = await callBackfill({
+          response = await callBackfill({
             baseUrl,
             accessToken,
             summaryStartTimeInSeconds: minStart,
-            summaryEndTimeInSeconds: activeWindow.summaryEndTimeInSeconds,
+            summaryEndTimeInSeconds,
           });
 
           console.log('Garmin backfill retried with min start time', {
             garminUserId,
             minStart,
-            summaryEndTimeInSeconds: activeWindow.summaryEndTimeInSeconds,
-            status: adjustedResponse.status,
-            attempt,
+            summaryEndTimeInSeconds,
+            status: response.status,
           });
 
-          if (adjustedResponse.status === 200 || adjustedResponse.status === 202) {
+          if (response.status === 200 || response.status === 202) {
             return NextResponse.json({
               success: true,
               adjustedStartTimeInSeconds: minStart,
-              ...activeWindow,
             });
           }
-
-          responseDetails = await adjustedResponse.text();
-          if (
-            adjustedResponse.status === 409 &&
-            isDuplicateBackfillError(responseDetails)
-          ) {
-            continue;
-          }
-
-          return NextResponse.json(
-            {
-              success: false,
-              error: 'Garmin backfill request failed.',
-              status: adjustedResponse.status,
-              details: responseDetails.slice(0, 1000),
-            },
-            { status: 502 },
-          );
         }
       }
 
@@ -397,18 +326,36 @@ export async function POST(request: NextRequest) {
           success: false,
           error: 'Garmin backfill request failed.',
           status: response.status,
-          details: responseDetails.slice(0, 1000),
+          details: details.slice(0, 1000),
         },
         { status: 502 },
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      duplicate: true,
-      message: 'No available backfill window found after retries.',
-      attempts: BACKFILL_WINDOW_ATTEMPTS,
-    });
+    if (response.status === 409) {
+      const details = await response.text();
+      const isDuplicateBackfill = /duplicate backfill/i.test(details);
+
+      if (isDuplicateBackfill) {
+        return NextResponse.json({
+          success: true,
+          duplicate: true,
+          message: 'Backfill already requested for this time window.',
+        });
+      }
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Garmin backfill conflict.',
+          status: response.status,
+          details: details.slice(0, 1000),
+        },
+        { status: 409 },
+      );
+    }
+
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Garmin backfill route error', error);
     return NextResponse.json(
