@@ -1,6 +1,6 @@
 create table if not exists public.garmin_users (
   id bigserial primary key,
-  user_id uuid references auth.users (id) on delete cascade,
+  garmin_user_id text not null,
   access_token text not null,
   refresh_token text,
   token_type text,
@@ -11,6 +11,5 @@ create table if not exists public.garmin_users (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
-create unique index if not exists garmin_users_user_id_unique_idx
-  on public.garmin_users (user_id)
-  where user_id is not null;
+create unique index if not exists garmin_users_garmin_user_id_unique_idx
+  on public.garmin_users (garmin_user_id);
