@@ -239,12 +239,14 @@ export async function processGarminActivities(params: {
 
 async function processSinglePingActivity(activity: GarminPingActivity) {
   const userId = activity.userId;
-  const callbackURL = activity.callbackURL;
+  const callbackURL =
+    activity.callbackURL ?? activity.callbackUrl ?? activity.callback_url;
 
   if (!userId || !callbackURL) {
     console.warn("Garmin ping activity missing required fields", {
       hasUserId: Boolean(userId),
       hasCallbackURL: Boolean(callbackURL),
+      keys: Object.keys(activity),
     });
     return;
   }
@@ -312,13 +314,33 @@ async function processSinglePingActivity(activity: GarminPingActivity) {
 
 export async function processGarminPingPayload(payload: GarminPingPayload) {
   const activities = Array.isArray(payload.activities) ? payload.activities : [];
+  const activityDetails = Array.isArray(payload.activityDetails)
+    ? payload.activityDetails
+    : [];
+  const activityFiles = Array.isArray(payload.activityFiles)
+    ? payload.activityFiles
+    : [];
+  const moveIQActivities = Array.isArray(payload.moveIQActivities)
+    ? payload.moveIQActivities
+    : [];
+
+  const pingActivities = [
+    ...activities,
+    ...activityDetails,
+    ...activityFiles,
+    ...moveIQActivities,
+  ];
 
   console.log("Garmin ping received", {
     activitiesCount: activities.length,
+    activityDetailsCount: activityDetails.length,
+    activityFilesCount: activityFiles.length,
+    moveIQActivitiesCount: moveIQActivities.length,
+    totalCallbacks: pingActivities.length,
   });
 
   await Promise.all(
-    activities.map(async (activity) => {
+    pingActivities.map(async (activity) => {
       try {
         await processSinglePingActivity(activity);
       } catch (error) {
