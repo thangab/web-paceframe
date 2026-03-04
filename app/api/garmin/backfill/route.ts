@@ -6,6 +6,7 @@ const DEFAULT_GARMIN_API_BASE_URL = 'https://apis.garmin.com/wellness-api';
 const GARMIN_OAUTH_TOKEN_URL =
   'https://connectapi.garmin.com/di-oauth2-service/oauth/token';
 const BACKFILL_PATH = 'rest/backfill/activities';
+const DEFAULT_BACKFILL_LOOKBACK_DAYS = 7;
 
 type BackfillRequestBody = {
   garmin_user_id?: string;
@@ -25,6 +26,20 @@ type GarminRefreshTokenResponse = {
   token_type?: string;
   scope?: string;
 };
+
+function parseMinStartTimeFromGarminError(details: string) {
+  const match = details.match(/min start time of ([0-9TZ:.\-]+)/i);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const parsed = Date.parse(match[1]);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return Math.floor(parsed / 1000);
+}
 
 function getSupabaseConfig() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -220,19 +235,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const currentDate = new Date();
-    const currentMonthStart = new Date(
-      Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth(), 1, 0, 0, 0),
-    );
-    const previousMonthStart = new Date(
-      Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth() - 1, 1, 0, 0, 0),
-    );
+    const lookbackDaysRaw = Number(process.env.GARMIN_BACKFILL_LOOKBACK_DAYS);
+    const lookbackDays =
+      Number.isFinite(lookbackDaysRaw) && lookbackDaysRaw > 0
+        ? lookbackDaysRaw
+        : DEFAULT_BACKFILL_LOOKBACK_DAYS;
 
-    const summaryStartTimeInSeconds = Math.floor(
-      previousMonthStart.getTime() / 1000,
-    );
-    const summaryEndTimeInSeconds =
-      Math.floor(currentMonthStart.getTime() / 1000) - 1;
+    const summaryEndTimeInSeconds = Math.floor(Date.now() / 1000);
+    const summaryStartTimeInSeconds =
+      summaryEndTimeInSeconds - Math.floor(lookbackDays * 24 * 60 * 60);
 
     let accessToken = connection.access_token;
     let response = await callBackfill({
@@ -276,6 +287,40 @@ export async function POST(request: NextRequest) {
 
     if (!(response.status === 202 || response.status === 200 || response.status === 409)) {
       const details = await response.text();
+
+      // Garmin can reject old ranges with:
+      // "start ... before min start time of ..."
+      // Retry once with the provider min start boundary.
+      if (response.status === 400) {
+        const minStart = parseMinStartTimeFromGarminError(details);
+        if (
+          minStart &&
+          minStart > summaryStartTimeInSeconds &&
+          minStart < summaryEndTimeInSeconds
+        ) {
+          response = await callBackfill({
+            baseUrl,
+            accessToken,
+            summaryStartTimeInSeconds: minStart,
+            summaryEndTimeInSeconds,
+          });
+
+          console.log('Garmin backfill retried with min start time', {
+            garminUserId,
+            minStart,
+            summaryEndTimeInSeconds,
+            status: response.status,
+          });
+
+          if (response.status === 200 || response.status === 202) {
+            return NextResponse.json({
+              success: true,
+              adjustedStartTimeInSeconds: minStart,
+            });
+          }
+        }
+      }
+
       return NextResponse.json(
         {
           success: false,
