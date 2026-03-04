@@ -196,9 +196,13 @@ export async function processGarminActivities(params: {
     activities,
   });
 
-  const normalized = activities
-    .map((activity) => normalizeGarminActivity(userId, activity))
-    .filter((activity): activity is NormalizedActivity => activity !== null);
+  const normalizedCandidates = activities.map((activity) =>
+    normalizeGarminActivity(userId, activity)
+  );
+  const normalized = normalizedCandidates.filter(
+    (activity): activity is NormalizedActivity => activity !== null
+  );
+  const dropped = normalizedCandidates.length - normalized.length;
 
   if (normalized.length === 0) {
     console.log("Activities processed", {
@@ -209,6 +213,9 @@ export async function processGarminActivities(params: {
       normalized: 0,
       inserted: 0,
       duplicates: 0,
+      dropped,
+      droppedReason: "missing provider activity id (summaryId/activityId/activityUUID/uuid)",
+      sampleKeys: activities[0] ? Object.keys(activities[0]) : [],
     });
     return;
   }
@@ -233,6 +240,13 @@ export async function processGarminActivities(params: {
 
   await upsertActivities(toInsert);
 
+  console.log("Garmin activities DB upsert success", {
+    provider: GARMIN_PROVIDER,
+    userId,
+    summaryType,
+    inserted: toInsert.length,
+  });
+
   console.log("Activities processed", {
     provider: GARMIN_PROVIDER,
     userId,
@@ -245,6 +259,10 @@ export async function processGarminActivities(params: {
 }
 
 async function processSinglePingActivity(activity: GarminPingActivity) {
+  console.log("Garmin ping item raw", {
+    activity,
+  });
+
   const userId = extractUserId(activity);
   const callbackURL = extractCallbackUrl(activity);
 
@@ -321,6 +339,13 @@ async function processSinglePingActivity(activity: GarminPingActivity) {
       keys: Object.keys(activity),
       inlineCount: inlineActivities.length,
     });
+
+    if (inlineActivities.length === 0) {
+      console.warn("Garmin inline payload had no processable activity id", {
+        userId: knownGarminUserId,
+        keys: Object.keys(activity),
+      });
+    }
 
     summaryGroups = [
       {
