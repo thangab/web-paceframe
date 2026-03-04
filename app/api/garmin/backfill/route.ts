@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
-const DEFAULT_GARMIN_API_BASE_URL = 'https://apis.garmin.com/wellness-api';
+const DEFAULT_GARMIN_API_BASE_URL = 'https://healthapi.garmin.com/wellness-api';
 const BACKFILL_PATH = '/rest/backfill/activities';
 const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
 
