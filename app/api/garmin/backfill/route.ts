@@ -6,7 +6,7 @@ const DEFAULT_GARMIN_API_BASE_URL = 'https://apis.garmin.com/wellness-api';
 const GARMIN_OAUTH_TOKEN_URL =
   'https://connectapi.garmin.com/di-oauth2-service/oauth/token';
 const BACKFILL_PATH = 'rest/backfill/activities';
-const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
+const EIGHT_DAYS_IN_SECONDS = 8 * 24 * 60 * 60;
 
 type BackfillRequestBody = {
   garmin_user_id?: string;
@@ -120,7 +120,7 @@ async function callBackfill(params: {
   baseUrl: string;
   accessToken: string;
   now: number;
-  sevenDaysAgo: number;
+  eightDaysAgo: number;
 }) {
   const normalizedBase = params.baseUrl.endsWith('/')
     ? params.baseUrl
@@ -135,7 +135,7 @@ async function callBackfill(params: {
 
   url.searchParams.set(
     'summaryStartTimeInSeconds',
-    params.sevenDaysAgo.toString(),
+    params.eightDaysAgo.toString(),
   );
   url.searchParams.set('summaryEndTimeInSeconds', params.now.toString());
 
@@ -219,14 +219,14 @@ export async function POST(request: NextRequest) {
     }
 
     const now = Math.floor(Date.now() / 1000);
-    const sevenDaysAgo = now - SEVEN_DAYS_IN_SECONDS;
+    const eightDaysAgo = now - EIGHT_DAYS_IN_SECONDS;
 
     let accessToken = connection.access_token;
     let response = await callBackfill({
       baseUrl,
       accessToken,
       now,
-      sevenDaysAgo,
+      eightDaysAgo,
     });
 
     if (response.status === 401 && connection.refresh_token) {
@@ -246,7 +246,7 @@ export async function POST(request: NextRequest) {
             baseUrl,
             accessToken,
             now,
-            sevenDaysAgo,
+            eightDaysAgo,
           });
         }
       } catch (refreshError) {
@@ -259,7 +259,7 @@ export async function POST(request: NextRequest) {
       status: response.status,
     });
 
-    if (!(response.status === 202 || response.status === 200)) {
+    if (!(response.status === 202 || response.status === 200 || response.status === 409)) {
       const details = await response.text();
       return NextResponse.json(
         {
@@ -269,6 +269,29 @@ export async function POST(request: NextRequest) {
           details: details.slice(0, 1000),
         },
         { status: 502 },
+      );
+    }
+
+    if (response.status === 409) {
+      const details = await response.text();
+      const isDuplicateBackfill = /duplicate backfill/i.test(details);
+
+      if (isDuplicateBackfill) {
+        return NextResponse.json({
+          success: true,
+          duplicate: true,
+          message: 'Backfill already requested for this time window.',
+        });
+      }
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Garmin backfill conflict.',
+          status: response.status,
+          details: details.slice(0, 1000),
+        },
+        { status: 409 },
       );
     }
 
