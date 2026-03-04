@@ -79,49 +79,6 @@ function normalizeGarminActivity(
   };
 }
 
-function toInFilter(ids: string[]) {
-  return ids
-    .map((id) => `"${id.replaceAll('"', '\\"')}"`)
-    .join(",");
-}
-
-async function fetchExistingActivityIds(ids: string[]) {
-  if (ids.length === 0) {
-    return new Set<string>();
-  }
-
-  const { supabaseUrl, serviceRoleKey, table } = getSupabaseConfig();
-  const inFilter = toInFilter(ids);
-  const existingUrl =
-    `${supabaseUrl}/rest/v1/${table}` +
-    `?select=provider_activity_id` +
-    `&provider=eq.${GARMIN_PROVIDER}` +
-    `&provider_activity_id=in.(${encodeURIComponent(inFilter)})`;
-
-  const response = await fetch(existingUrl, {
-    method: "GET",
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      Accept: "application/json",
-    },
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(
-      `Failed to check existing activities. status=${response.status}; body=${details.slice(
-        0,
-        500
-      )}`
-    );
-  }
-
-  const rows = (await response.json()) as Array<{ provider_activity_id?: string }>;
-  return new Set(rows.map((row) => row.provider_activity_id).filter(Boolean) as string[]);
-}
-
 async function upsertActivities(activities: NormalizedActivity[]) {
   if (activities.length === 0) {
     return;
@@ -220,31 +177,13 @@ export async function processGarminActivities(params: {
     return;
   }
 
-  const ids = normalized.map((activity) => activity.provider_activity_id);
-  const existing = await fetchExistingActivityIds(ids);
-
-  const duplicates = normalized.filter((activity) =>
-    existing.has(activity.provider_activity_id)
-  );
-  const toInsert = normalized.filter(
-    (activity) => !existing.has(activity.provider_activity_id)
-  );
-
-  duplicates.forEach((activity) => {
-    console.log("Duplicate activity skipped", {
-      provider: GARMIN_PROVIDER,
-      userId,
-      providerActivityId: activity.provider_activity_id,
-    });
-  });
-
-  await upsertActivities(toInsert);
+  await upsertActivities(normalized);
 
   console.log("Garmin activities DB upsert success", {
     provider: GARMIN_PROVIDER,
     userId,
     summaryType,
-    inserted: toInsert.length,
+    upserted: normalized.length,
   });
 
   console.log("Activities processed", {
@@ -253,8 +192,8 @@ export async function processGarminActivities(params: {
     summaryType,
     received: activities.length,
     normalized: normalized.length,
-    inserted: toInsert.length,
-    duplicates: duplicates.length,
+    inserted: normalized.length,
+    duplicates: "handled-by-upsert",
   });
 }
 
@@ -277,12 +216,13 @@ async function processSinglePingActivity(activity: GarminPingActivity) {
 
   const knownGarminUserId = await resolveKnownGarminUserId(userId);
 
+  const effectiveUserId = knownGarminUserId ?? userId;
+
   if (!knownGarminUserId) {
-    console.warn("Garmin ping user not linked yet, skipping payload", {
+    console.warn("Garmin ping user not linked in garmin_users, using ping userId directly", {
       garminUserId: userId,
       callbackURL,
     });
-    return;
   }
 
   let summaryGroups: Array<{ summaryType: string; items: GarminSummaryActivity[] }> = [];
@@ -335,7 +275,7 @@ async function processSinglePingActivity(activity: GarminPingActivity) {
     const inlineActivities = extractInlineActivitiesFromPing(activity);
 
     console.log("Garmin ping inline payload detected", {
-      userId: knownGarminUserId,
+      userId: effectiveUserId,
       keys: Object.keys(activity),
       inlineCount: inlineActivities.length,
     });
@@ -361,7 +301,7 @@ async function processSinglePingActivity(activity: GarminPingActivity) {
     }
 
     await processGarminActivities({
-      userId: knownGarminUserId,
+      userId: effectiveUserId,
       summaryType: group.summaryType,
       activities: group.items,
     });
