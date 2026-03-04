@@ -22,6 +22,10 @@ function getSupabaseConfig() {
   return { supabaseUrl, serviceRoleKey, table };
 }
 
+function getGarminUsersTableName() {
+  return process.env.SUPABASE_GARMIN_USERS_TABLE ?? "garmin_users";
+}
+
 function toProviderActivityId(activity: GarminSummaryActivity) {
   const value =
     activity.summaryId ?? activity.activityId ?? activity.activityUUID ?? activity.uuid;
@@ -147,6 +151,37 @@ async function upsertActivities(activities: NormalizedActivity[]) {
   }
 }
 
+async function resolveKnownGarminUserId(garminUserId: string) {
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const garminUsersTable = getGarminUsersTableName();
+  const lookupUrl =
+    `${supabaseUrl}/rest/v1/${garminUsersTable}` +
+    `?select=garmin_user_id` +
+    `&garmin_user_id=eq.${encodeURIComponent(garminUserId)}` +
+    `&limit=1`;
+
+  const response = await fetch(lookupUrl, {
+    method: "GET",
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Accept: "application/json",
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      `Failed to resolve Garmin user. status=${response.status}; body=${details.slice(0, 500)}`
+    );
+  }
+
+  const rows = (await response.json()) as Array<{ garmin_user_id?: string }>;
+  const row = rows[0];
+  return row?.garmin_user_id ?? null;
+}
+
 export async function processGarminActivities(params: {
   userId: string;
   summaryType: string;
@@ -214,6 +249,16 @@ async function processSinglePingActivity(activity: GarminPingActivity) {
     return;
   }
 
+  const knownGarminUserId = await resolveKnownGarminUserId(userId);
+
+  if (!knownGarminUserId) {
+    console.warn("Garmin ping user not linked yet, skipping payload", {
+      garminUserId: userId,
+      callbackURL,
+    });
+    return;
+  }
+
   const callbackResponse = await fetch(callbackURL, {
     method: "GET",
     headers: {
@@ -235,7 +280,7 @@ async function processSinglePingActivity(activity: GarminPingActivity) {
   const payload = (await callbackResponse.json()) as GarminCallbackPayload;
 
   console.log("Garmin callback fetched", {
-    userId,
+    userId: knownGarminUserId,
     callbackURL,
     counts: {
       activities: payload.activities?.length ?? 0,
@@ -258,7 +303,7 @@ async function processSinglePingActivity(activity: GarminPingActivity) {
     }
 
     await processGarminActivities({
-      userId,
+      userId: knownGarminUserId,
       summaryType: group.summaryType,
       activities: group.items,
     });
