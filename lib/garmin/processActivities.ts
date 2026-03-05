@@ -111,69 +111,129 @@ function mapActivityDetailsRow(item: GarminActivityDetail, userId: string) {
   };
 }
 
+export type GarminProcessResult = {
+  attempted: number;
+  inserted: number;
+  skipped: number;
+};
+
 export async function processActivities(
   items: GarminActivityPayload[],
   fallbackUserId?: string,
-): Promise<void> {
+): Promise<GarminProcessResult> {
+  const result: GarminProcessResult = { attempted: 0, inserted: 0, skipped: 0 };
+
   for (const item of items) {
     const userId = getUserId(item, fallbackUserId);
 
     if (!userId) {
       console.warn("Garmin activities item skipped: missing userId", { item });
+      result.skipped += 1;
       continue;
     }
 
+    result.attempted += 1;
     let rows: ReturnType<typeof mapActivitySummaryRow>[] = [];
 
     try {
       rows = [mapActivitySummaryRow(item, userId)];
     } catch {
       console.warn("Garmin activities item has no direct summary payload", { item });
+      result.skipped += 1;
       rows = [];
     }
 
     await supabaseInsert(TABLE_ACTIVITIES, rows);
+    result.inserted += rows.length;
   }
+
+  return result;
 }
 
 export async function processActivityDetails(
   items: GarminActivityDetailPayload[],
   fallbackUserId?: string,
-): Promise<void> {
-  for (const item of items) {
-    const userId = getUserId(item, fallbackUserId);
+  activitySummaryUserIds?: Map<string, string>,
+): Promise<GarminProcessResult> {
+  const result: GarminProcessResult = { attempted: 0, inserted: 0, skipped: 0 };
 
-    if (!userId) {
+  for (const item of items) {
+    const derivedUserId =
+      getUserId(item, fallbackUserId) ??
+      (item.summaryId ? activitySummaryUserIds?.get(String(item.summaryId)) : undefined) ??
+      (item.activityId !== undefined
+        ? activitySummaryUserIds?.get(`activity:${item.activityId}`)
+        : undefined);
+
+    if (!derivedUserId) {
       console.warn("Garmin activityDetails item skipped: missing userId", { item });
+      result.skipped += 1;
       continue;
     }
 
+    result.attempted += 1;
     let rows: ReturnType<typeof mapActivityDetailsRow>[] = [];
 
     try {
-      rows = [mapActivityDetailsRow(item as GarminActivityDetail, userId)];
+      rows = [mapActivityDetailsRow(item as GarminActivityDetail, derivedUserId)];
     } catch {
       console.warn("Garmin activityDetails item has no direct detail payload", { item });
+      result.skipped += 1;
       rows = [];
     }
 
     await supabaseInsert(TABLE_DETAILS, rows);
+    result.inserted += rows.length;
   }
+
+  return result;
 }
 
-export async function processGarminPing(payload: GarminPingPayload): Promise<void> {
+export type GarminPingProcessSummary = {
+  activities: GarminProcessResult;
+  activityDetails: GarminProcessResult;
+};
+
+export async function processGarminPing(
+  payload: GarminPingPayload,
+): Promise<GarminPingProcessSummary> {
   const activities = Array.isArray(payload.activities) ? payload.activities : [];
   const activityDetails = Array.isArray(payload.activityDetails) ? payload.activityDetails : [];
   const payloadUserId = payload.userId;
+
+  const activitySummaryUserIds = new Map<string, string>();
+
+  for (const activity of activities) {
+    const userId = getUserId(activity, payloadUserId);
+    if (!userId) {
+      continue;
+    }
+
+    if (activity.summaryId !== undefined) {
+      activitySummaryUserIds.set(String(activity.summaryId), userId);
+    }
+
+    if (activity.activityId !== undefined) {
+      activitySummaryUserIds.set(`activity:${activity.activityId}`, userId);
+    }
+  }
+
+  const [activitiesResult, activityDetailsResult] = await Promise.all([
+    processActivities(activities, payloadUserId),
+    processActivityDetails(activityDetails, payloadUserId, activitySummaryUserIds),
+  ]);
+
+  const summary: GarminPingProcessSummary = {
+    activities: activitiesResult,
+    activityDetails: activityDetailsResult,
+  };
 
   console.log("Garmin ping payload received", {
     activitiesCount: activities.length,
     activityDetailsCount: activityDetails.length,
     hasPayloadUserId: !!payloadUserId,
+    summary,
   });
 
-  await Promise.all([
-    processActivities(activities, payloadUserId),
-    processActivityDetails(activityDetails, payloadUserId),
-  ]);
+  return summary;
 }
