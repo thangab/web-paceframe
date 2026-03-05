@@ -45,7 +45,8 @@ export type GarminActivitySummary = {
   isWebUpload?: boolean;
 };
 
-export type GarminActivityPayload = GarminActivitySummary & GarminPingDescriptor;
+export type GarminActivityPayload = GarminActivitySummary &
+  GarminPingDescriptor;
 
 export type GarminSample = {
   startTimeInSeconds?: number;
@@ -73,4 +74,15 @@ export type GarminActivityDetail = {
   samples?: GarminSample[];
 };
 
-export type GarminActivityDetailPayload = GarminActivityDetail & GarminPingDescriptor;
+export type GarminActivityDetailPayload = GarminActivityDetail &
+  GarminPingDescriptor;
+
+export type ChartPoint = { x: number; y: number };
+
+export type SamplesVisualization = {
+  summaryPolyline: string | null;
+  hrSeries: ChartPoint[];
+  paceSeries: ChartPoint[];
+  gpsPointsCount: number;
+  samplesCount: number;
+};
