@@ -1,15 +1,19 @@
 export type GarminPingActivity = {
-  userId: string;
-  callbackURL: string;
+  userId?: string;
 };
 
 export type GarminPingPayload = {
-  activities?: GarminPingActivity[];
-  activityDetails?: GarminPingActivity[];
+  userId?: string;
+  activities?: GarminActivityPayload[];
+  activityDetails?: GarminActivityDetailPayload[];
+};
+
+export type GarminPingDescriptor = GarminPingActivity & {
+  userId?: string;
 };
 
 export type GarminActivitySummary = {
-  summaryId: string;
+  summaryId?: string;
   activityId?: number;
 
   activityType?: string;
@@ -41,9 +45,7 @@ export type GarminActivitySummary = {
   isWebUpload?: boolean;
 };
 
-export type GarminActivitiesResponse = {
-  activities: GarminActivitySummary[];
-};
+export type GarminActivityPayload = GarminActivitySummary & GarminPingDescriptor;
 
 export type GarminSample = {
   startTimeInSeconds?: number;
@@ -61,7 +63,7 @@ export type GarminSample = {
 };
 
 export type GarminActivityDetail = {
-  summaryId: string;
+  summaryId?: string;
   activityId?: number;
 
   startTimeInSeconds?: number;
@@ -71,6 +73,4 @@ export type GarminActivityDetail = {
   samples?: GarminSample[];
 };
 
-export type GarminActivityDetailsResponse = {
-  activityDetails: GarminActivityDetail[];
-};
+export type GarminActivityDetailPayload = GarminActivityDetail & GarminPingDescriptor;

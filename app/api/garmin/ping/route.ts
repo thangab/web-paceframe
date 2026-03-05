@@ -10,10 +10,15 @@ export async function POST(request: NextRequest) {
   try {
     payload = (await request.json()) as GarminPingPayload;
   } catch {
-    return NextResponse.json({ received: true });
+    return NextResponse.json(
+      { received: false, error: 'Invalid JSON body' },
+      { status: 400 },
+    );
   }
 
-  void processGarminPing(payload);
+  void processGarminPing(payload).catch((error) => {
+    console.error('processGarminPing failed', error);
+  });
 
   return NextResponse.json({ received: true });
 }
