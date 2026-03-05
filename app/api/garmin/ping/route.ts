@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
-import { processGarminPingPayload } from "@/lib/garmin/processActivities";
-import { GarminPingPayload } from "@/lib/garmin/types";
+import { NextRequest, NextResponse } from 'next/server';
+import { processGarminPing } from '@/lib/garmin/processActivities';
+import { GarminPingPayload } from '@/lib/garmin/types';
 
-export const runtime = "nodejs";
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   let payload: GarminPingPayload;
@@ -10,12 +10,10 @@ export async function POST(request: NextRequest) {
   try {
     payload = (await request.json()) as GarminPingPayload;
   } catch {
-    // Garmin expects a fast 200 ack.
-    return NextResponse.json({ received: true }, { status: 200 });
+    return NextResponse.json({ received: true });
   }
 
-  // Respond immediately, then process callback URLs asynchronously.
-  void processGarminPingPayload(payload);
+  void processGarminPing(payload);
 
-  return NextResponse.json({ received: true }, { status: 200 });
+  return NextResponse.json({ received: true });
 }

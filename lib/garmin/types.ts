@@ -1,60 +1,76 @@
 export type GarminPingActivity = {
-  userId?: string;
-  userID?: string;
-  userid?: string;
-  callbackURL?: string;
-  callbackUrl?: string;
-  callback_url?: string;
-  callbackURI?: string;
-  callbackUri?: string;
-  callback_uri?: string;
-  [key: string]: unknown;
+  userId: string;
+  callbackURL: string;
 };
 
 export type GarminPingPayload = {
   activities?: GarminPingActivity[];
   activityDetails?: GarminPingActivity[];
-  activityFiles?: GarminPingActivity[];
-  moveIQActivities?: GarminPingActivity[];
-  callbackURL?: string;
-  callbackUrl?: string;
-  callback_url?: string;
-  callbackURI?: string;
-  callbackUri?: string;
-  callback_uri?: string;
 };
 
-export type GarminSummaryActivity = {
-  summaryId?: string | number;
-  activityId?: string | number;
-  activityUUID?: string;
-  uuid?: string;
+export type GarminActivitySummary = {
+  summaryId: string;
+  activityId?: number;
+
   activityType?: string;
-  distanceInMeters?: number;
-  durationInSeconds?: number;
-  averagePaceInMinutesPerKilometer?: number;
-  deviceName?: string;
+  activityName?: string;
+
   startTimeInSeconds?: number;
-  startTimeInMilliseconds?: number;
-  [key: string]: unknown;
+
+  durationInSeconds?: number;
+  movingDurationInSeconds?: number;
+
+  distanceInMeters?: number;
+
+  averageSpeedInMetersPerSecond?: number;
+  maxSpeedInMetersPerSecond?: number;
+
+  averagePaceInMinutesPerKilometer?: number;
+
+  averageHeartRateInBeatsPerMinute?: number;
+  maxHeartRateInBeatsPerMinute?: number;
+
+  activeKilocalories?: number;
+
+  totalElevationGainInMeters?: number;
+  totalElevationLossInMeters?: number;
+
+  deviceName?: string;
+
+  manual?: boolean;
+  isWebUpload?: boolean;
 };
 
-export type GarminCallbackPayload = {
-  activities?: GarminSummaryActivity[];
-  activityDetails?: GarminSummaryActivity[];
-  activityFiles?: GarminSummaryActivity[];
-  moveIQActivities?: GarminSummaryActivity[];
+export type GarminActivitiesResponse = {
+  activities: GarminActivitySummary[];
 };
 
-export type NormalizedActivity = {
-  user_id: string;
-  provider: "garmin";
-  provider_activity_id: string;
-  activity_type: string | null;
-  distance: number | null;
-  duration: number | null;
-  pace: number | null;
-  device_name: string | null;
-  start_time: string | null;
-  raw_json: GarminSummaryActivity;
+export type GarminSample = {
+  startTimeInSeconds?: number;
+
+  latitudeInDegree?: number;
+  longitudeInDegree?: number;
+
+  elevationInMeters?: number;
+
+  heartRate?: number;
+
+  speedMetersPerSecond?: number;
+
+  totalDistanceInMeters?: number;
+};
+
+export type GarminActivityDetail = {
+  summaryId: string;
+  activityId?: number;
+
+  startTimeInSeconds?: number;
+
+  deviceName?: string;
+
+  samples?: GarminSample[];
+};
+
+export type GarminActivityDetailsResponse = {
+  activityDetails: GarminActivityDetail[];
 };
