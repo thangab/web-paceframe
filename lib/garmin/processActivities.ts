@@ -211,6 +211,10 @@ export async function processActivityDetails(
 
         device_name: detail.deviceName ?? null,
 
+        start_latlng: samples.length
+          ? [samples[0].latitudeInDegree, samples[0].longitudeInDegree]
+          : null,
+
         summary_polyline: summaryPolyline,
         hr_series: hrSeries,
         pace_series: paceSeries,
