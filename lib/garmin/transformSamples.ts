@@ -86,11 +86,6 @@ function simplifyPolyline(points: Point[], tolerance = 0.0001): Point[] {
   return [points[0], points[points.length - 1]];
 }
 
-function speedToPaceMinPerKm(speedMps?: number): number | null {
-  if (!speedMps || speedMps <= 0) return null;
-  return 1000 / speedMps / 60;
-}
-
 export function buildVisualizationFromSamples(
   samples: GarminSample[],
 ): SamplesVisualization {
@@ -114,8 +109,8 @@ export function buildVisualizationFromSamples(
     }
 
     if (typeof s.speedMetersPerSecond === 'number') {
-      const pace = speedToPaceMinPerKm(s.speedMetersPerSecond);
-      if (pace !== null) paceSeries.push({ x: t, y: pace });
+      if (s.speedMetersPerSecond > 0)
+        paceSeries.push({ x: t, y: s.speedMetersPerSecond });
     }
   }
 
