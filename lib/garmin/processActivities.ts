@@ -183,6 +183,7 @@ export async function processActivityDetails(
 
     try {
       const detail = item as GarminActivityDetail;
+      const summary = detail.summary ?? {};
 
       const samples = Array.isArray(detail.samples) ? detail.samples : [];
 
@@ -195,7 +196,7 @@ export async function processActivityDetails(
       } = buildVisualizationFromSamples(samples);
 
       const row = {
-        garmin_user_id: derivedUserId,
+        garmin_user_id: detail?.userId,
 
         summary_id:
           detail.summaryId ??
@@ -205,15 +206,47 @@ export async function processActivityDetails(
 
         activity_id: detail.activityId ?? null,
 
-        start_time: detail.startTimeInSeconds
-          ? new Date(detail.startTimeInSeconds * 1000).toISOString()
+        start_time: summary.startTimeInSeconds
+          ? new Date((summary.startTimeInSeconds ?? 0) * 1000).toISOString()
           : null,
 
-        device_name: detail.deviceName ?? null,
+        activity_type: summary.activityType ?? null,
+        activity_name: summary.activityName ?? null,
+        start_time_offset_in_seconds:
+          summary.startTimeOffsetInSeconds ??
+          detail.startTimeOffsetInSeconds ??
+          null,
+        duration_seconds: summary.durationInSeconds ?? null,
+        moving_duration_seconds: summary.movingDurationInSeconds ?? null,
+        distance_meters: summary.distanceInMeters ?? null,
+        average_speed_mps: summary.averageSpeedInMetersPerSecond ?? null,
+        max_speed_mps: summary.maxSpeedInMetersPerSecond ?? null,
+        average_pace_min_per_km:
+          summary.averagePaceInMinutesPerKilometer ?? null,
+        max_pace_min_per_km: summary.maxPaceInMinutesPerKilometer ?? null,
+        average_hr_bpm: summary.averageHeartRateInBeatsPerMinute ?? null,
+        max_hr_bpm: summary.maxHeartRateInBeatsPerMinute ?? null,
+        average_run_cadence_spm:
+          summary.averageRunCadenceInStepsPerMinute ?? null,
+        max_run_cadence_spm: summary.maxRunCadenceInStepsPerMinute ?? null,
+        active_kilocalories: summary.activeKilocalories ?? null,
+        total_elevation_gain_m: summary.totalElevationGainInMeters ?? null,
+        total_elevation_loss_m: summary.totalElevationLossInMeters ?? null,
+        steps: summary.steps ?? null,
+        starting_latitude_in_degree: summary.startingLatitudeInDegree ?? null,
+        starting_longitude_in_degree: summary.startingLongitudeInDegree ?? null,
+        start_latlng:
+          summary.startingLatitudeInDegree != null &&
+          summary.startingLongitudeInDegree != null
+            ? [
+                summary.startingLatitudeInDegree,
+                summary.startingLongitudeInDegree,
+              ]
+            : null,
+        manual: summary.manual ?? null,
+        is_web_upload: summary.isWebUpload ?? null,
 
-        start_latlng: samples.length
-          ? [samples[0].latitudeInDegree, samples[0].longitudeInDegree]
-          : null,
+        device_name: summary.deviceName ?? null,
 
         summary_polyline: summaryPolyline,
         hr_series: hrSeries,

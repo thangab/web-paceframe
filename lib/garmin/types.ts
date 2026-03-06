@@ -43,6 +43,14 @@ export type GarminActivitySummary = {
 
   manual?: boolean;
   isWebUpload?: boolean;
+
+  startTimeOffsetInSeconds?: number;
+  averageRunCadenceInStepsPerMinute?: number;
+  maxRunCadenceInStepsPerMinute?: number;
+  maxPaceInMinutesPerKilometer?: number;
+  startingLatitudeInDegree?: number;
+  startingLongitudeInDegree?: number;
+  steps?: number;
 };
 
 export type GarminActivityPayload = GarminActivitySummary &
@@ -64,10 +72,13 @@ export type GarminSample = {
 };
 
 export type GarminActivityDetail = {
+  userId?: string;
   summaryId?: string;
   activityId?: number;
+  summary?: GarminActivitySummary;
 
   startTimeInSeconds?: number;
+  startTimeOffsetInSeconds?: number;
 
   deviceName?: string;
 
