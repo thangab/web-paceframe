@@ -1,7 +1,7 @@
-import Image from "next/image";
-import Link from "next/link";
-import { redirect } from "next/navigation";
-import { isLocale, type Locale } from "../i18n";
+import Image from 'next/image';
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { isLocale, type Locale } from '../i18n';
 
 type LocaleLayoutProps = {
   children: React.ReactNode;
@@ -16,11 +16,11 @@ const copy: Record<
   }
 > = {
   en: {
-    privacyLabel: "Privacy Policy",
-    termsLabel: "Terms of Service",
+    privacyLabel: 'Privacy Policy',
+    termsLabel: 'Terms of Service',
   },
   fr: {
-    privacyLabel: "Politique de confidentialite",
+    privacyLabel: 'Politique de confidentialite',
     termsLabel: "Conditions d'utilisation",
   },
 };
@@ -32,7 +32,7 @@ export default async function LocaleLayout({
   const { locale: rawLocale } = await params;
 
   if (!isLocale(rawLocale)) {
-    redirect("/en");
+    redirect('/en');
   }
 
   const locale = rawLocale;
@@ -59,9 +59,9 @@ export default async function LocaleLayout({
             <Link
               href="/en"
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wide transition ${
-                locale === "en"
-                  ? "bg-[#D4FF54] text-[#131B2E] shadow-sm"
-                  : "text-white/75 hover:text-white"
+                locale === 'en'
+                  ? 'bg-[#D4FF54] text-[#131B2E] shadow-sm'
+                  : 'text-white/75 hover:text-white'
               }`}
             >
               EN
@@ -69,9 +69,9 @@ export default async function LocaleLayout({
             <Link
               href="/fr"
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wide transition ${
-                locale === "fr"
-                  ? "bg-[#D4FF54] text-[#131B2E] shadow-sm"
-                  : "text-white/75 hover:text-white"
+                locale === 'fr'
+                  ? 'bg-[#D4FF54] text-[#131B2E] shadow-sm'
+                  : 'text-white/75 hover:text-white'
               }`}
             >
               FR
@@ -83,22 +83,40 @@ export default async function LocaleLayout({
       {children}
 
       <div className="mx-auto w-full max-w-6xl border-t border-white/10 px-4 py-6 text-sm text-white/65 sm:px-6 md:px-10">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="break-all sm:break-normal">Support: contact@paceframe.app</p>
-          <div className="flex flex-wrap items-center gap-4 sm:gap-5">
-            <Link
-              href={`/${locale}/privacy-policy`}
-              className="transition hover:text-[#D4FF54]"
-            >
-              {t.privacyLabel}
-            </Link>
-            <Link
-              href={`/${locale}/terms`}
-              className="transition hover:text-[#D4FF54]"
-            >
-              {t.termsLabel}
-            </Link>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="break-all sm:break-normal">
+              Support: contact@paceframe.app
+            </p>
+            <div className="flex flex-wrap items-center gap-4 sm:gap-5">
+              <Link
+                href={`/${locale}/privacy-policy`}
+                className="transition hover:text-[#D4FF54]"
+              >
+                {t.privacyLabel}
+              </Link>
+              <Link
+                href={`/${locale}/terms`}
+                className="transition hover:text-[#D4FF54]"
+              >
+                {t.termsLabel}
+              </Link>
+            </div>
           </div>
+          <a
+            href="https://startupfa.me/s/paceframe?utm_source=paceframe.app"
+            target="_blank"
+            rel="noreferrer"
+            className="w-fit transition-opacity hover:opacity-90"
+          >
+            <Image
+              src="https://startupfa.me/badges/featured/dark-small.webp"
+              alt="PaceFrame - Featured on Startup Fame"
+              width={224}
+              height={36}
+              unoptimized
+            />
+          </a>
         </div>
       </div>
     </main>
