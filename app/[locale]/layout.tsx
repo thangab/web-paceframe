@@ -106,14 +106,13 @@ export default async function LocaleLayout({
           <a
             href="https://startupfa.me/s/paceframe?utm_source=paceframe.app"
             target="_blank"
-            rel="noreferrer"
-            className="w-fit transition-opacity hover:opacity-90"
+            className="mx-auto"
           >
             <Image
-              src="https://startupfa.me/badges/featured/dark-small.webp"
-              alt="PaceFrame - Featured on Startup Fame"
-              width={224}
-              height={36}
+              src="https://startupfa.me/badges/highlight-badge.webp"
+              alt="PaceFrame - Startup Fame Highlight"
+              width={228}
+              height={54}
               unoptimized
             />
           </a>
