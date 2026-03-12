@@ -15,6 +15,10 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 const TABLE_ACTIVITIES = 'garmin_activities';
 const TABLE_DETAILS = 'garmin_activity_details';
+const UPSERT_CONFLICT_COLUMNS: Partial<Record<string, string>> = {
+  [TABLE_ACTIVITIES]: 'garmin_user_id,summary_id',
+  [TABLE_DETAILS]: 'garmin_user_id,summary_id',
+};
 
 function getEnv(): { supabaseUrl: string; supabaseKey: string } {
   if (!SUPABASE_URL || !SUPABASE_KEY) {
@@ -47,14 +51,20 @@ async function supabaseInsert<T extends object>(
   }
 
   const { supabaseUrl, supabaseKey } = getEnv();
+  const conflictColumns = UPSERT_CONFLICT_COLUMNS[table];
+  const url = new URL(`${supabaseUrl}/rest/v1/${table}`);
 
-  const res = await fetch(`${supabaseUrl}/rest/v1/${table}`, {
+  if (conflictColumns) {
+    url.searchParams.set('on_conflict', conflictColumns);
+  }
+
+  const res = await fetch(url.toString(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       apikey: supabaseKey,
       Authorization: `Bearer ${supabaseKey}`,
-      Prefer: 'resolution=merge-duplicates',
+      Prefer: 'resolution=merge-duplicates,return=minimal',
     },
     body: JSON.stringify(rows),
   });
@@ -196,7 +206,7 @@ export async function processActivityDetails(
       } = buildVisualizationFromSamples(samples);
 
       const row = {
-        garmin_user_id: detail?.userId,
+        garmin_user_id: derivedUserId,
 
         summary_id:
           detail.summaryId ??
