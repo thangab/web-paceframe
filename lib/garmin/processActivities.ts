@@ -42,6 +42,20 @@ function getUserId(
   return item.userId ?? fallback;
 }
 
+function normalizeActivitySummary(
+  item: GarminActivityPayload | GarminActivityDetailPayload,
+): GarminActivitySummary | null {
+  if ('summary' in item && item.summary) {
+    return item.summary;
+  }
+
+  if (item.summaryId === undefined || item.summaryId === null) {
+    return null;
+  }
+
+  return item;
+}
+
 async function supabaseInsert<T extends object>(
   table: string,
   rows: T[],
@@ -144,7 +158,13 @@ export async function processActivities(
     let rows: ReturnType<typeof mapActivitySummaryRow>[] = [];
 
     try {
-      rows = [mapActivitySummaryRow(item, userId)];
+      const summary = normalizeActivitySummary(item);
+
+      if (!summary) {
+        throw new Error('Missing summary payload');
+      }
+
+      rows = [mapActivitySummaryRow(summary, userId)];
     } catch {
       console.warn('Garmin activities item has no direct summary payload', {
         item,
@@ -289,20 +309,43 @@ export type GarminPingProcessSummary = {
   activityDetails: GarminProcessResult;
 };
 
+type GarminPersistedActivitySummary = GarminActivitySummary & {
+  userId: string;
+};
+
 export async function processGarminPing(
   payload: GarminPingPayload,
 ): Promise<GarminPingProcessSummary> {
-  const activities = Array.isArray(payload.activities)
-    ? payload.activities
-    : [];
+  const activities = Array.isArray(payload.activities) ? payload.activities : [];
   const activityDetails = Array.isArray(payload.activityDetails)
     ? payload.activityDetails
     : [];
   const payloadUserId = payload.userId;
+  const detailSummaries = activityDetails
+    .map((item) => {
+      const summary = normalizeActivitySummary(item);
+      const userId = getUserId(item, payloadUserId);
+
+      if (!summary || !userId) {
+        return null;
+      }
+
+      return {
+        ...summary,
+        userId,
+      };
+    })
+    .filter(
+      (
+        item,
+      ): item is GarminPersistedActivitySummary => item !== null,
+    );
+  const summariesToPersist =
+    activities.length > 0 ? activities : detailSummaries;
 
   const activitySummaryUserIds = new Map<string, string>();
 
-  for (const activity of activities) {
+  for (const activity of summariesToPersist) {
     const userId = getUserId(activity, payloadUserId);
     if (!userId) {
       continue;
@@ -318,7 +361,7 @@ export async function processGarminPing(
   }
 
   const [activitiesResult, activityDetailsResult] = await Promise.all([
-    processActivities(activities, payloadUserId),
+    processActivities(summariesToPersist, payloadUserId),
     processActivityDetails(
       activityDetails,
       payloadUserId,
@@ -333,6 +376,7 @@ export async function processGarminPing(
 
   console.log('Garmin ping payload received', {
     activitiesCount: activities.length,
+    summariesPersistedCount: summariesToPersist.length,
     activityDetailsCount: activityDetails.length,
     hasPayloadUserId: !!payloadUserId,
     summary,
