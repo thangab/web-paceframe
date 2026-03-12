@@ -49,7 +49,10 @@ function normalizeActivitySummary(
     return item.summary;
   }
 
-  if (item.summaryId === undefined || item.summaryId === null) {
+  if (
+    (item.summaryId === undefined || item.summaryId === null) &&
+    item.activityId === undefined
+  ) {
     return null;
   }
 
@@ -92,13 +95,17 @@ async function supabaseInsert<T extends object>(
 }
 
 function mapActivitySummaryRow(item: GarminActivitySummary, userId: string) {
-  if (item.summaryId === undefined || item.summaryId === null) {
-    throw new Error('Missing summaryId in activity summary payload');
+  const summaryId =
+    item.summaryId ??
+    (item.activityId !== undefined ? String(item.activityId) : null);
+
+  if (!summaryId) {
+    throw new Error('Missing summaryId and activityId in activity summary payload');
   }
 
   return {
     garmin_user_id: userId,
-    summary_id: String(item.summaryId),
+    summary_id: summaryId,
     activity_id: item.activityId ?? null,
 
     activity_type: item.activityType ?? null,
