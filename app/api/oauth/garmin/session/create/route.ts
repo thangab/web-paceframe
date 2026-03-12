@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
+const GARMIN_AUTHORIZE_URL = 'https://connect.garmin.com/oauth2Confirm';
 const DEFAULT_MOBILE_REDIRECT_URI = 'paceframe://app/oauth';
 const SESSION_TTL_SECONDS = 10 * 60;
 
@@ -87,6 +88,7 @@ export async function POST(request: NextRequest) {
         expires_at: expiresAt,
       },
     ]),
+    cache: 'no-store',
   });
 
   if (!dbResponse.ok) {
@@ -97,7 +99,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const authUrl = new URL('https://connect.garmin.com/oauth2Confirm');
+  const authUrl = new URL(GARMIN_AUTHORIZE_URL);
   authUrl.searchParams.set('response_type', 'code');
   authUrl.searchParams.set('client_id', clientId);
   authUrl.searchParams.set('code_challenge', codeChallenge);

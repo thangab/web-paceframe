@@ -19,7 +19,9 @@ type GarminUserIdResponse = {
   userId?: string;
   user_id?: string;
   id?: string;
-  user?: { id?: string };
+  user?: {
+    id?: string;
+  };
 };
 
 function withQueryParams(
@@ -64,6 +66,7 @@ async function fetchGarminUserId(accessToken: string) {
   }
 
   const contentType = response.headers.get('content-type') ?? '';
+
   if (contentType.includes('application/json')) {
     const payload = (await response.json()) as GarminUserIdResponse;
     const userId =
@@ -73,7 +76,10 @@ async function fetchGarminUserId(accessToken: string) {
   }
 
   const rawText = (await response.text()).trim();
-  if (!rawText) throw new Error('Garmin user ID response was empty.');
+  if (!rawText) {
+    throw new Error('Garmin user ID response was empty.');
+  }
+
   return rawText.replace(/^"|"$/g, '');
 }
 
@@ -139,7 +145,9 @@ export async function GET(request: NextRequest) {
 
   const sessionLookupUrl =
     `${supabaseUrl}/rest/v1/${sessionTable}` +
-    `?state=eq.${encodeURIComponent(returnedState)}&select=state,code_verifier,mobile_redirect_uri,expires_at&limit=1`;
+    `?state=eq.${encodeURIComponent(
+      returnedState,
+    )}&select=state,code_verifier,mobile_redirect_uri,expires_at&limit=1`;
 
   const sessionResponse = await fetch(sessionLookupUrl, {
     headers: {
@@ -305,7 +313,9 @@ export async function GET(request: NextRequest) {
   }
 
   await fetch(
-    `${supabaseUrl}/rest/v1/${sessionTable}?state=eq.${encodeURIComponent(returnedState)}`,
+    `${supabaseUrl}/rest/v1/${sessionTable}?state=eq.${encodeURIComponent(
+      returnedState,
+    )}`,
     {
       method: 'DELETE',
       headers: {
