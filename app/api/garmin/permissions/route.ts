@@ -20,6 +20,22 @@ type GarminRefreshTokenResponse = {
   refresh_token_expires_in?: number;
 };
 
+type GarminPermissionsWebhookPayload =
+  | {
+      garmin_user_id?: string;
+      garminUserId?: string;
+      user_id?: string;
+      userId?: string;
+      users?: unknown[];
+      notifications?: unknown[];
+      user_permissions?: unknown[];
+      userPermissions?: unknown[];
+      permission_changes?: unknown[];
+      permissionChanges?: unknown[];
+    }
+  | unknown[]
+  | null;
+
 function getSupabaseConfig() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -53,23 +69,66 @@ function getGarminUserId(request: NextRequest) {
   return garminUserId?.trim() || null;
 }
 
-async function getGarminUserIdFromBody(request: NextRequest) {
-  const body = (await request.json().catch(() => null)) as
-    | {
-        garmin_user_id?: string;
-        garminUserId?: string;
-        user_id?: string;
-        userId?: string;
-      }
-    | null;
+function extractUserId(candidate: unknown) {
+  if (!candidate || typeof candidate !== 'object') {
+    return null;
+  }
 
+  const record = candidate as Record<string, unknown>;
   const garminUserId =
-    body?.garmin_user_id ??
-    body?.garminUserId ??
-    body?.user_id ??
-    body?.userId;
+    record.garmin_user_id ??
+    record.garminUserId ??
+    record.user_id ??
+    record.userId;
 
-  return garminUserId?.trim() || null;
+  return typeof garminUserId === 'string' && garminUserId.trim()
+    ? garminUserId.trim()
+    : null;
+}
+
+function extractGarminUserIdsFromPayload(payload: GarminPermissionsWebhookPayload) {
+  const userIds = new Set<string>();
+  const candidates = Array.isArray(payload) ? payload : [payload];
+
+  for (const candidate of candidates) {
+    const directUserId = extractUserId(candidate);
+    if (directUserId) {
+      userIds.add(directUserId);
+    }
+
+    if (!candidate || typeof candidate !== 'object') {
+      continue;
+    }
+
+    const record = candidate as Record<string, unknown>;
+    const nestedCollections = [
+      record.users,
+      record.notifications,
+      record.user_permissions,
+      record.userPermissions,
+      record.permission_changes,
+      record.permissionChanges,
+    ];
+
+    for (const collection of nestedCollections) {
+      if (!Array.isArray(collection)) {
+        continue;
+      }
+
+      for (const item of collection) {
+        const nestedUserId = extractUserId(item);
+        if (nestedUserId) {
+          userIds.add(nestedUserId);
+        }
+      }
+    }
+  }
+
+  return [...userIds];
+}
+
+async function parseWebhookBody(request: NextRequest) {
+  return (await request.json().catch(() => null)) as GarminPermissionsWebhookPayload;
 }
 
 async function loadGarminUserToken(garminUserId: string) {
@@ -255,6 +314,51 @@ async function storePermissions(garminUserId: string, permissions: string[]) {
   }
 }
 
+async function syncPermissionsForUser(garminUserId: string) {
+  const connection = await loadGarminUserToken(garminUserId);
+
+  if (!connection?.access_token) {
+    throw new Error(`Garmin user not connected: ${garminUserId}.`);
+  }
+
+  let accessToken = connection.access_token;
+  let response = await callGarminUserPermissions(accessToken);
+
+  if (response.status === 401 && connection.refresh_token) {
+    const refreshed = await refreshGarminAccessToken(connection.refresh_token);
+
+    if (!refreshed?.access_token) {
+      throw new Error(
+        `Failed to refresh Garmin token before fetching permissions for ${garminUserId}.`,
+      );
+    }
+
+    accessToken = refreshed.access_token;
+
+    await updateGarminUserToken({
+      garminUserId,
+      accessToken,
+      refreshToken: refreshed.refresh_token ?? connection.refresh_token,
+      expiresIn: refreshed.expires_in,
+      refreshTokenExpiresIn: refreshed.refresh_token_expires_in,
+    });
+
+    response = await callGarminUserPermissions(accessToken);
+  }
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      `Garmin permissions fetch failed for ${garminUserId}. status=${response.status}; body=${details.slice(0, 500)}`,
+    );
+  }
+
+  const permissions = parsePermissions(await response.json());
+  await storePermissions(garminUserId, permissions);
+
+  return permissions;
+}
+
 function errorResponse(error: unknown) {
   const message =
     error instanceof Error
@@ -285,47 +389,7 @@ export async function GET(request: NextRequest) {
         'Missing Garmin user identifier. Pass garmin_user_id in the query string, for example: /api/garmin/permissions?garmin_user_id=123456.',
       );
     }
-
-    const connection = await loadGarminUserToken(garminUserId);
-
-    if (!connection?.access_token) {
-      throw new Error(`Garmin user not connected: ${garminUserId}.`);
-    }
-
-    let accessToken = connection.access_token;
-    let response = await callGarminUserPermissions(accessToken);
-
-    if (response.status === 401 && connection.refresh_token) {
-      const refreshed = await refreshGarminAccessToken(connection.refresh_token);
-
-      if (!refreshed?.access_token) {
-        throw new Error(
-          `Failed to refresh Garmin token before fetching permissions for ${garminUserId}.`,
-        );
-      }
-
-      accessToken = refreshed.access_token;
-
-      await updateGarminUserToken({
-        garminUserId,
-        accessToken,
-        refreshToken: refreshed.refresh_token ?? connection.refresh_token,
-        expiresIn: refreshed.expires_in,
-        refreshTokenExpiresIn: refreshed.refresh_token_expires_in,
-      });
-
-      response = await callGarminUserPermissions(accessToken);
-    }
-
-    if (!response.ok) {
-      const details = await response.text();
-      throw new Error(
-        `Garmin permissions fetch failed for ${garminUserId}. status=${response.status}; body=${details.slice(0, 500)}`,
-      );
-    }
-
-    const permissions = parsePermissions(await response.json());
-    await storePermissions(garminUserId, permissions);
+    const permissions = await syncPermissionsForUser(garminUserId);
 
     return NextResponse.json({
       success: true,
@@ -345,60 +409,39 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const garminUserId =
-      (await getGarminUserIdFromBody(request)) ?? getGarminUserId(request);
+    const payload = await parseWebhookBody(request);
+    const garminUserIds = [
+      ...new Set([
+        ...extractGarminUserIdsFromPayload(payload),
+        ...(getGarminUserId(request) ? [getGarminUserId(request)!] : []),
+      ]),
+    ];
 
-    if (!garminUserId) {
-      throw new Error(
-        'Missing Garmin user identifier. Pass garmin_user_id in the JSON body or query string, for example: { "garmin_user_id": "123456" } or /api/garmin/permissions?garmin_user_id=123456.',
-      );
-    }
-
-    const connection = await loadGarminUserToken(garminUserId);
-
-    if (!connection?.access_token) {
-      throw new Error(`Garmin user not connected: ${garminUserId}.`);
-    }
-
-    let accessToken = connection.access_token;
-    let response = await callGarminUserPermissions(accessToken);
-
-    if (response.status === 401 && connection.refresh_token) {
-      const refreshed = await refreshGarminAccessToken(connection.refresh_token);
-
-      if (!refreshed?.access_token) {
-        throw new Error(
-          `Failed to refresh Garmin token before fetching permissions for ${garminUserId}.`,
-        );
-      }
-
-      accessToken = refreshed.access_token;
-
-      await updateGarminUserToken({
-        garminUserId,
-        accessToken,
-        refreshToken: refreshed.refresh_token ?? connection.refresh_token,
-        expiresIn: refreshed.expires_in,
-        refreshTokenExpiresIn: refreshed.refresh_token_expires_in,
+    if (!garminUserIds.length) {
+      console.error('Garmin permissions webhook missing user identifier', {
+        pathname: request.nextUrl.pathname,
+        payload,
+        search: request.nextUrl.search,
       });
 
-      response = await callGarminUserPermissions(accessToken);
-    }
-
-    if (!response.ok) {
-      const details = await response.text();
       throw new Error(
-        `Garmin permissions fetch failed for ${garminUserId}. status=${response.status}; body=${details.slice(0, 500)}`,
+        'Missing Garmin user identifier in Garmin permissions webhook payload.',
       );
     }
 
-    const permissions = parsePermissions(await response.json());
-    await storePermissions(garminUserId, permissions);
+    const results = [];
+
+    for (const garminUserId of garminUserIds) {
+      const permissions = await syncPermissionsForUser(garminUserId);
+      results.push({
+        garmin_user_id: garminUserId,
+        permissions,
+      });
+    }
 
     return NextResponse.json({
       success: true,
-      garmin_user_id: garminUserId,
-      permissions,
+      results,
     });
   } catch (error) {
     console.error('Garmin permissions route failed', {
