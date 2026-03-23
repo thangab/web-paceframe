@@ -114,6 +114,17 @@ function extractGarminUserIds(payload: DeregistrationPayload) {
   return [...userIds];
 }
 
+function isGarminDeregistrationWebhookPayload(payload: DeregistrationPayload) {
+  return Boolean(
+    payload &&
+      typeof payload === 'object' &&
+      (Array.isArray(payload.userDeregistration) ||
+        Array.isArray(payload.userDeregistrations) ||
+        Array.isArray(payload.deregistrations) ||
+        Array.isArray(payload.notifications)),
+  );
+}
+
 async function deleteLocalUserData(
   garminUserId: string,
   deletedByTable: DeregistrationResult['deletedByTable'],
@@ -326,18 +337,16 @@ function buildDeleteTargets(garminUserId: string): DeleteTarget[] {
 
 async function handleDeregistration(
   request: NextRequest,
+  payload: DeregistrationPayload,
   options?: { skipGarminDelete?: boolean },
 ) {
-  const body = (await request
-    .json()
-    .catch(() => null)) as DeregistrationPayload;
-  const garminUserIds = extractGarminUserIds(body);
+  const garminUserIds = extractGarminUserIds(payload);
 
   console.log('Garmin deregistration request received', {
     garminUserIds,
     pathname: request.nextUrl.pathname,
     payloadKeys:
-      body && typeof body === 'object' ? Object.keys(body) : [],
+      payload && typeof payload === 'object' ? Object.keys(payload) : [],
     search: request.nextUrl.search,
     skipGarminDelete: options?.skipGarminDelete ?? false,
   });
@@ -345,7 +354,7 @@ async function handleDeregistration(
   if (!garminUserIds.length) {
     console.error('Garmin deregistration webhook missing user identifier', {
       pathname: request.nextUrl.pathname,
-      payload: body,
+      payload,
       search: request.nextUrl.search,
     });
 
@@ -452,7 +461,8 @@ function errorResponse(error: unknown) {
 
 async function handleRequest(request: NextRequest) {
   try {
-    const result = await handleDeregistration(request);
+    const payload = (await request.json().catch(() => null)) as DeregistrationPayload;
+    const result = await handleDeregistration(request, payload);
 
     return NextResponse.json({
       success: true,
@@ -471,8 +481,10 @@ export async function DELETE(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const result = await handleDeregistration(request, {
-      skipGarminDelete: true,
+    const payload = (await request.json().catch(() => null)) as DeregistrationPayload;
+    const skipGarminDelete = isGarminDeregistrationWebhookPayload(payload);
+    const result = await handleDeregistration(request, payload, {
+      skipGarminDelete,
     });
 
     return NextResponse.json({
