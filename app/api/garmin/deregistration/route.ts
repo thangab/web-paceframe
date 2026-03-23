@@ -7,17 +7,15 @@ const USER_REGISTRATION_PATH = 'rest/user/registration';
 const GARMIN_OAUTH_TOKEN_URL =
   'https://connectapi.garmin.com/di-oauth2-service/oauth/token';
 
-type DeregistrationPayload =
-  | {
-      garmin_user_id?: string;
-      garminUserId?: string;
-      user_id?: string;
-      userId?: string;
-      deregistrations?: unknown[];
-      deregistration?: unknown;
-      users?: unknown[];
-    }
-  | null;
+type DeregistrationPayload = {
+  garmin_user_id?: string;
+  garminUserId?: string;
+  user_id?: string;
+  userId?: string;
+  deregistrations?: unknown[];
+  deregistration?: unknown;
+  users?: unknown[];
+} | null;
 
 type DeleteTarget = {
   table: string;
@@ -50,7 +48,8 @@ type DeregistrationResult = {
 function getSupabaseConfig() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const garminUsersTable = process.env.SUPABASE_GARMIN_USERS_TABLE ?? 'garmin_users';
+  const garminUsersTable =
+    process.env.SUPABASE_GARMIN_USERS_TABLE ?? 'garmin_users';
 
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error(
@@ -281,15 +280,9 @@ function buildDeleteTargets(garminUserId: string): DeleteTarget[] {
       filters: { garmin_user_id: garminUserId },
     },
     {
-      table: process.env.SUPABASE_GARMIN_ACTIVITIES_TABLE ?? 'garmin_activities',
+      table:
+        process.env.SUPABASE_GARMIN_ACTIVITIES_TABLE ?? 'garmin_activities',
       filters: { garmin_user_id: garminUserId },
-    },
-    {
-      table: process.env.SUPABASE_ACTIVITIES_TABLE ?? 'activities',
-      filters: {
-        provider: 'garmin',
-        user_id: garminUserId,
-      },
     },
     {
       table: process.env.SUPABASE_GARMIN_USERS_TABLE ?? 'garmin_users',
@@ -299,7 +292,9 @@ function buildDeleteTargets(garminUserId: string): DeleteTarget[] {
 }
 
 async function handleDeregistration(request: NextRequest) {
-  const body = (await request.json().catch(() => null)) as DeregistrationPayload;
+  const body = (await request
+    .json()
+    .catch(() => null)) as DeregistrationPayload;
   const garminUserIds = extractGarminUserIds(body);
 
   if (!garminUserIds.length) {
@@ -321,7 +316,9 @@ async function handleDeregistration(request: NextRequest) {
       let response = await callGarminDeleteRegistration(accessToken);
 
       if (response.status === 401 && connection.refresh_token) {
-        const refreshed = await refreshGarminAccessToken(connection.refresh_token);
+        const refreshed = await refreshGarminAccessToken(
+          connection.refresh_token,
+        );
         if (!refreshed?.access_token) {
           throw new Error(
             `Failed to refresh Garmin token before deregistration for ${garminUserId}.`,
