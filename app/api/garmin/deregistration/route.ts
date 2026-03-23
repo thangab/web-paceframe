@@ -288,6 +288,12 @@ function buildDeleteTargets(garminUserId: string): DeleteTarget[] {
       table: process.env.SUPABASE_GARMIN_USERS_TABLE ?? 'garmin_users',
       filters: { garmin_user_id: garminUserId },
     },
+    {
+      table:
+        process.env.SUPABASE_GARMIN_USER_PERMISSIONS_TABLE ??
+        'garmin_user_permissions',
+      filters: { garmin_user_id: garminUserId },
+    },
   ];
 }
 
