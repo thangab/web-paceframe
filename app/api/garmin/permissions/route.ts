@@ -53,6 +53,25 @@ function getGarminUserId(request: NextRequest) {
   return garminUserId?.trim() || null;
 }
 
+async function getGarminUserIdFromBody(request: NextRequest) {
+  const body = (await request.json().catch(() => null)) as
+    | {
+        garmin_user_id?: string;
+        garminUserId?: string;
+        user_id?: string;
+        userId?: string;
+      }
+    | null;
+
+  const garminUserId =
+    body?.garmin_user_id ??
+    body?.garminUserId ??
+    body?.user_id ??
+    body?.userId;
+
+  return garminUserId?.trim() || null;
+}
+
 async function loadGarminUserToken(garminUserId: string) {
   const { garminUsersTable, serviceRoleKey, supabaseUrl } = getSupabaseConfig();
   const lookupUrl =
@@ -264,6 +283,73 @@ export async function GET(request: NextRequest) {
     if (!garminUserId) {
       throw new Error(
         'Missing Garmin user identifier. Pass garmin_user_id in the query string, for example: /api/garmin/permissions?garmin_user_id=123456.',
+      );
+    }
+
+    const connection = await loadGarminUserToken(garminUserId);
+
+    if (!connection?.access_token) {
+      throw new Error(`Garmin user not connected: ${garminUserId}.`);
+    }
+
+    let accessToken = connection.access_token;
+    let response = await callGarminUserPermissions(accessToken);
+
+    if (response.status === 401 && connection.refresh_token) {
+      const refreshed = await refreshGarminAccessToken(connection.refresh_token);
+
+      if (!refreshed?.access_token) {
+        throw new Error(
+          `Failed to refresh Garmin token before fetching permissions for ${garminUserId}.`,
+        );
+      }
+
+      accessToken = refreshed.access_token;
+
+      await updateGarminUserToken({
+        garminUserId,
+        accessToken,
+        refreshToken: refreshed.refresh_token ?? connection.refresh_token,
+        expiresIn: refreshed.expires_in,
+        refreshTokenExpiresIn: refreshed.refresh_token_expires_in,
+      });
+
+      response = await callGarminUserPermissions(accessToken);
+    }
+
+    if (!response.ok) {
+      const details = await response.text();
+      throw new Error(
+        `Garmin permissions fetch failed for ${garminUserId}. status=${response.status}; body=${details.slice(0, 500)}`,
+      );
+    }
+
+    const permissions = parsePermissions(await response.json());
+    await storePermissions(garminUserId, permissions);
+
+    return NextResponse.json({
+      success: true,
+      garmin_user_id: garminUserId,
+      permissions,
+    });
+  } catch (error) {
+    console.error('Garmin permissions route failed', {
+      error: error instanceof Error ? error.message : error,
+      pathname: request.nextUrl.pathname,
+      search: request.nextUrl.search,
+    });
+
+    return errorResponse(error);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const garminUserId = await getGarminUserIdFromBody(request);
+
+    if (!garminUserId) {
+      throw new Error(
+        'Missing Garmin user identifier. Pass garmin_user_id in the JSON body, for example: { "garmin_user_id": "123456" }.',
       );
     }
 
