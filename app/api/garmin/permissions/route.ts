@@ -271,14 +271,42 @@ async function callGarminUserPermissions(accessToken: string) {
   });
 }
 
-function parsePermissions(payload: unknown) {
-  if (!Array.isArray(payload)) {
-    throw new Error('Garmin permissions response is not an array.');
+function normalizePermissionsArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return null;
   }
 
-  return payload.filter((permission): permission is string => {
+  return value.filter((permission): permission is string => {
     return typeof permission === 'string' && permission.trim().length > 0;
   });
+}
+
+function parsePermissions(payload: unknown) {
+  const directPermissions = normalizePermissionsArray(payload);
+  if (directPermissions) {
+    return directPermissions;
+  }
+
+  if (payload && typeof payload === 'object') {
+    const record = payload as Record<string, unknown>;
+    const nestedPermissions =
+      normalizePermissionsArray(record.permissions) ??
+      normalizePermissionsArray(record.userPermissions) ??
+      normalizePermissionsArray(record.user_permissions);
+
+    if (nestedPermissions) {
+      return nestedPermissions;
+    }
+  }
+
+  const preview =
+    payload && typeof payload === 'object'
+      ? JSON.stringify(payload).slice(0, 500)
+      : String(payload);
+
+  throw new Error(
+    `Garmin permissions response is not an array. payload=${preview}`,
+  );
 }
 
 async function storePermissions(garminUserId: string, permissions: string[]) {
