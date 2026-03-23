@@ -30,6 +30,7 @@ type GarminPermissionsWebhookPayload =
       notifications?: unknown[];
       user_permissions?: unknown[];
       userPermissions?: unknown[];
+      userPermissionsChange?: unknown[];
       permission_changes?: unknown[];
       permissionChanges?: unknown[];
     }
@@ -106,6 +107,7 @@ function extractGarminUserIdsFromPayload(payload: GarminPermissionsWebhookPayloa
       record.notifications,
       record.user_permissions,
       record.userPermissions,
+      record.userPermissionsChange,
       record.permission_changes,
       record.permissionChanges,
     ];
@@ -419,6 +421,10 @@ export async function POST(request: NextRequest) {
 
     if (!garminUserIds.length) {
       console.error('Garmin permissions webhook missing user identifier', {
+        payloadKeys:
+          payload && typeof payload === 'object' && !Array.isArray(payload)
+            ? Object.keys(payload as Record<string, unknown>)
+            : [],
         pathname: request.nextUrl.pathname,
         payload,
         search: request.nextUrl.search,
