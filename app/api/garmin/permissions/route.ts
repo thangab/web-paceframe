@@ -263,7 +263,7 @@ export async function GET(request: NextRequest) {
 
     if (!garminUserId) {
       throw new Error(
-        'Missing Garmin user identifier. Expected garmin_user_id, garminUserId, user_id, or userId.',
+        'Missing Garmin user identifier. Pass garmin_user_id in the query string, for example: /api/garmin/permissions?garmin_user_id=123456.',
       );
     }
 
@@ -314,6 +314,12 @@ export async function GET(request: NextRequest) {
       permissions,
     });
   } catch (error) {
+    console.error('Garmin permissions route failed', {
+      error: error instanceof Error ? error.message : error,
+      pathname: request.nextUrl.pathname,
+      search: request.nextUrl.search,
+    });
+
     return errorResponse(error);
   }
 }
