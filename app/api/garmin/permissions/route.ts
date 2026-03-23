@@ -345,6 +345,8 @@ async function storePermissions(garminUserId: string, permissions: string[]) {
 }
 
 async function syncPermissionsForUser(garminUserId: string) {
+  console.log('Garmin permissions sync started', { garminUserId });
+
   const connection = await loadGarminUserToken(garminUserId);
 
   if (!connection?.access_token) {
@@ -354,7 +356,14 @@ async function syncPermissionsForUser(garminUserId: string) {
   let accessToken = connection.access_token;
   let response = await callGarminUserPermissions(accessToken);
 
+  console.log('Garmin permissions fetch response', {
+    garminUserId,
+    status: response.status,
+  });
+
   if (response.status === 401 && connection.refresh_token) {
+    console.log('Garmin permissions token refresh required', { garminUserId });
+
     const refreshed = await refreshGarminAccessToken(connection.refresh_token);
 
     if (!refreshed?.access_token) {
@@ -374,6 +383,11 @@ async function syncPermissionsForUser(garminUserId: string) {
     });
 
     response = await callGarminUserPermissions(accessToken);
+
+    console.log('Garmin permissions fetch response after refresh', {
+      garminUserId,
+      status: response.status,
+    });
   }
 
   if (!response.ok) {
@@ -385,6 +399,12 @@ async function syncPermissionsForUser(garminUserId: string) {
 
   const permissions = parsePermissions(await response.json());
   await storePermissions(garminUserId, permissions);
+
+  console.log('Garmin permissions sync completed', {
+    garminUserId,
+    permissionsCount: permissions.length,
+    permissions,
+  });
 
   return permissions;
 }
@@ -413,6 +433,12 @@ function errorResponse(error: unknown) {
 export async function GET(request: NextRequest) {
   try {
     const garminUserId = getGarminUserId(request);
+
+    console.log('Garmin permissions GET received', {
+      pathname: request.nextUrl.pathname,
+      search: request.nextUrl.search,
+      garminUserId,
+    });
 
     if (!garminUserId) {
       throw new Error(
@@ -447,6 +473,16 @@ export async function POST(request: NextRequest) {
       ]),
     ];
 
+    console.log('Garmin permissions webhook received', {
+      pathname: request.nextUrl.pathname,
+      payloadKeys:
+        payload && typeof payload === 'object' && !Array.isArray(payload)
+          ? Object.keys(payload as Record<string, unknown>)
+          : [],
+      garminUserIds,
+      search: request.nextUrl.search,
+    });
+
     if (!garminUserIds.length) {
       console.error('Garmin permissions webhook missing user identifier', {
         payloadKeys:
@@ -472,6 +508,10 @@ export async function POST(request: NextRequest) {
         permissions,
       });
     }
+
+    console.log('Garmin permissions webhook completed', {
+      usersCount: results.length,
+    });
 
     return NextResponse.json({
       success: true,

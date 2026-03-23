@@ -15,6 +15,9 @@ type DeregistrationPayload = {
   deregistrations?: unknown[];
   deregistration?: unknown;
   users?: unknown[];
+  userDeregistration?: unknown[];
+  userDeregistrations?: unknown[];
+  notifications?: unknown[];
 } | null;
 
 type DeleteTarget = {
@@ -91,6 +94,13 @@ function extractGarminUserIds(payload: DeregistrationPayload) {
   const nestedCandidates = [
     ...(Array.isArray(payload?.deregistrations) ? payload.deregistrations : []),
     ...(Array.isArray(payload?.users) ? payload.users : []),
+    ...(Array.isArray(payload?.userDeregistration)
+      ? payload.userDeregistration
+      : []),
+    ...(Array.isArray(payload?.userDeregistrations)
+      ? payload.userDeregistrations
+      : []),
+    ...(Array.isArray(payload?.notifications) ? payload.notifications : []),
     ...(payload?.deregistration ? [payload.deregistration] : []),
   ];
 
@@ -102,6 +112,23 @@ function extractGarminUserIds(payload: DeregistrationPayload) {
   }
 
   return [...userIds];
+}
+
+async function deleteLocalUserData(
+  garminUserId: string,
+  deletedByTable: DeregistrationResult['deletedByTable'],
+) {
+  for (const target of buildDeleteTargets(garminUserId)) {
+    const deletedCount = await deleteRows(target);
+    deletedByTable[target.table] =
+      (deletedByTable[target.table] ?? 0) + deletedCount;
+
+    console.log('Garmin deregistration local delete completed', {
+      deletedCount,
+      garminUserId,
+      table: target.table,
+    });
+  }
 }
 
 async function loadGarminUserToken(garminUserId: string) {
@@ -297,13 +324,31 @@ function buildDeleteTargets(garminUserId: string): DeleteTarget[] {
   ];
 }
 
-async function handleDeregistration(request: NextRequest) {
+async function handleDeregistration(
+  request: NextRequest,
+  options?: { skipGarminDelete?: boolean },
+) {
   const body = (await request
     .json()
     .catch(() => null)) as DeregistrationPayload;
   const garminUserIds = extractGarminUserIds(body);
 
+  console.log('Garmin deregistration request received', {
+    garminUserIds,
+    pathname: request.nextUrl.pathname,
+    payloadKeys:
+      body && typeof body === 'object' ? Object.keys(body) : [],
+    search: request.nextUrl.search,
+    skipGarminDelete: options?.skipGarminDelete ?? false,
+  });
+
   if (!garminUserIds.length) {
+    console.error('Garmin deregistration webhook missing user identifier', {
+      pathname: request.nextUrl.pathname,
+      payload: body,
+      search: request.nextUrl.search,
+    });
+
     throw new Error(
       'Missing Garmin user identifier. Expected garmin_user_id, garminUserId, user_id, or userId.',
     );
@@ -315,13 +360,22 @@ async function handleDeregistration(request: NextRequest) {
   for (const garminUserId of garminUserIds) {
     const connection = await loadGarminUserToken(garminUserId);
     let garminStatus: number | 'skipped' = 'skipped';
-    let registrationDeleted = false;
+    let registrationDeleted = options?.skipGarminDelete ?? false;
 
-    if (connection?.access_token) {
+    if (!options?.skipGarminDelete && connection?.access_token) {
       let accessToken = connection.access_token;
       let response = await callGarminDeleteRegistration(accessToken);
 
+      console.log('Garmin deregistration delete response', {
+        garminUserId,
+        status: response.status,
+      });
+
       if (response.status === 401 && connection.refresh_token) {
+        console.log('Garmin deregistration token refresh required', {
+          garminUserId,
+        });
+
         const refreshed = await refreshGarminAccessToken(
           connection.refresh_token,
         );
@@ -342,6 +396,11 @@ async function handleDeregistration(request: NextRequest) {
         });
 
         response = await callGarminDeleteRegistration(accessToken);
+
+        console.log('Garmin deregistration delete response after refresh', {
+          garminUserId,
+          status: response.status,
+        });
       }
 
       garminStatus = response.status;
@@ -356,11 +415,7 @@ async function handleDeregistration(request: NextRequest) {
       }
     }
 
-    for (const target of buildDeleteTargets(garminUserId)) {
-      const deletedCount = await deleteRows(target);
-      deletedByTable[target.table] =
-        (deletedByTable[target.table] ?? 0) + deletedCount;
-    }
+    await deleteLocalUserData(garminUserId, deletedByTable);
 
     registrations.push({
       garmin_user_id: garminUserId,
@@ -368,6 +423,12 @@ async function handleDeregistration(request: NextRequest) {
       garmin_status: garminStatus,
     });
   }
+
+  console.log('Garmin deregistration completed', {
+    deletedByTable,
+    garminUserIds,
+    registrations,
+  });
 
   return { deletedByTable, garminUserIds, registrations };
 }
@@ -409,5 +470,18 @@ export async function DELETE(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  return handleRequest(request);
+  try {
+    const result = await handleDeregistration(request, {
+      skipGarminDelete: true,
+    });
+
+    return NextResponse.json({
+      success: true,
+      deleted_user_ids: result.garminUserIds,
+      deleted_counts: result.deletedByTable,
+      registrations: result.registrations,
+    });
+  } catch (error) {
+    return errorResponse(error);
+  }
 }
