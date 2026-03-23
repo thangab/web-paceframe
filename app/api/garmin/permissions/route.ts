@@ -345,11 +345,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const garminUserId = await getGarminUserIdFromBody(request);
+    const garminUserId =
+      (await getGarminUserIdFromBody(request)) ?? getGarminUserId(request);
 
     if (!garminUserId) {
       throw new Error(
-        'Missing Garmin user identifier. Pass garmin_user_id in the JSON body, for example: { "garmin_user_id": "123456" }.',
+        'Missing Garmin user identifier. Pass garmin_user_id in the JSON body or query string, for example: { "garmin_user_id": "123456" } or /api/garmin/permissions?garmin_user_id=123456.',
       );
     }
 
