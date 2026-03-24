@@ -108,13 +108,15 @@ export async function POST(request: NextRequest) {
   try {
     const result = await processGarminPing(payload);
     console.log('Garmin ping process response', JSON.stringify(result));
-    const hasInsertedActivities = result.activities.inserted > 0;
+    const hasActivityPayload =
+      Array.isArray(payload.activities) && payload.activities.length > 0;
+    const hasInsertedActivities =
+      hasActivityPayload && result.activities.inserted > 0;
     const garminUserIds = extractGarminUserIds(payload);
 
-    const pushResults =
-      hasInsertedActivities
-        ? await sendPushNotifications(request, garminUserIds)
-        : [];
+    const pushResults = hasInsertedActivities
+      ? await sendPushNotifications(request, garminUserIds)
+      : [];
 
     return NextResponse.json({ received: true, result, pushResults });
   } catch (error) {
