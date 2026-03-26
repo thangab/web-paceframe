@@ -4,6 +4,7 @@ export const runtime = 'nodejs';
 
 type SendPushPayload = {
   garmin_user_id?: string;
+  strava_athlete_id?: number;
   title?: string;
   body?: string;
   data?: Record<string, unknown>;
@@ -67,14 +68,19 @@ function normalizeString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function normalizeNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function parseBody(body: SendPushPayload | null) {
   const garminUserId = normalizeString(body?.garmin_user_id);
+  const stravaAthleteId = normalizeNumber(body?.strava_athlete_id);
   const title = normalizeString(body?.title) ?? 'PaceFrame';
   const message = normalizeString(body?.body) ?? '';
   const data = body?.data && typeof body.data === 'object' ? body.data : {};
 
-  if (!garminUserId) {
-    throw new Error('Missing garmin_user_id.');
+  if (!garminUserId && !stravaAthleteId) {
+    throw new Error('Missing garmin_user_id or strava_athlete_id.');
   }
 
   if (!message) {
@@ -83,6 +89,7 @@ function parseBody(body: SendPushPayload | null) {
 
   return {
     garminUserId,
+    stravaAthleteId,
     title,
     body: message,
     data,
@@ -101,12 +108,36 @@ function chunkArray<T>(items: T[], size: number) {
   return chunks;
 }
 
-async function loadPushTokens(garminUserId: string) {
+function buildPushTokenLookupQuery({
+  garminUserId,
+  stravaAthleteId,
+}: {
+  garminUserId: string | null;
+  stravaAthleteId: number | null;
+}) {
+  if (garminUserId) {
+    return `garmin_user_id=eq.${encodeURIComponent(garminUserId)}`;
+  }
+
+  if (stravaAthleteId !== null) {
+    return `strava_athlete_id=eq.${stravaAthleteId}`;
+  }
+
+  throw new Error('Missing garmin_user_id or strava_athlete_id.');
+}
+
+async function loadPushTokens({
+  garminUserId,
+  stravaAthleteId,
+}: {
+  garminUserId: string | null;
+  stravaAthleteId: number | null;
+}) {
   const { supabaseUrl, serviceRoleKey, pushTokensTable } = getSupabaseConfig();
   const url =
     `${supabaseUrl}/rest/v1/${pushTokensTable}` +
     `?select=expo_push_token` +
-    `&garmin_user_id=eq.${encodeURIComponent(garminUserId)}`;
+    `&${buildPushTokenLookupQuery({ garminUserId, stravaAthleteId })}`;
 
   const response = await fetch(url, {
     method: 'GET',
@@ -231,17 +262,23 @@ export async function POST(request: NextRequest) {
       .catch(() => null)) as SendPushPayload | null;
     const payload = parseBody(body);
 
-    const allTokens = await loadPushTokens(payload.garminUserId);
+    const allTokens = await loadPushTokens({
+      garminUserId: payload.garminUserId,
+      stravaAthleteId: payload.stravaAthleteId,
+    });
     const validTokens = allTokens.filter(isExpoPushToken);
     const invalidFormatTokens = allTokens.filter(
       (token) => !isExpoPushToken(token),
     );
+    const targetLabel = payload.garminUserId
+      ? `Garmin user ${payload.garminUserId}`
+      : `Strava athlete ${payload.stravaAthleteId}`;
 
     if (!validTokens.length) {
       return NextResponse.json(
         {
           success: false,
-          error: `No valid Expo push tokens found for Garmin user ${payload.garminUserId}.`,
+          error: `No valid Expo push tokens found for ${targetLabel}.`,
           invalid_format_tokens: invalidFormatTokens,
         },
         { status: 404 },
@@ -257,7 +294,12 @@ export async function POST(request: NextRequest) {
         title: payload.title,
         body: payload.body,
         data: {
-          garmin_user_id: payload.garminUserId,
+          ...(payload.garminUserId
+            ? { garmin_user_id: payload.garminUserId }
+            : {}),
+          ...(payload.stravaAthleteId !== null
+            ? { strava_athlete_id: payload.stravaAthleteId }
+            : {}),
           ...payload.data,
         },
         sound: 'default',
@@ -309,6 +351,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       garmin_user_id: payload.garminUserId,
+      strava_athlete_id: payload.stravaAthleteId,
       tokens_total: allTokens.length,
       tokens_valid: validTokens.length,
       tokens_invalid_format: invalidFormatTokens,

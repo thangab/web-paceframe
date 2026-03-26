@@ -51,9 +51,9 @@ function parseBody(body: PushRegistrationPayload | null) {
     throw new Error('Missing platform.');
   }
 
-  if (!garminUserId) {
+  if (!garminUserId && !stravaAthleteId) {
     throw new Error(
-      'Missing garmin_user_id. Push registration is only supported for Garmin users.',
+      'Missing garmin_user_id or strava_athlete_id.',
     );
   }
 
@@ -132,6 +132,7 @@ export async function POST(request: NextRequest) {
       success: true,
       push_token: row?.expo_push_token ?? payload.expo_push_token,
       garmin_user_id: payload.garmin_user_id,
+      strava_athlete_id: payload.strava_athlete_id,
     });
   } catch (error) {
     return errorResponse(error);
