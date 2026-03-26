@@ -35,7 +35,7 @@ async function sendPushNotifications(
   }
 
   const origin = request.nextUrl.origin;
-  const pushBody = 'New Garmin activity imported.';
+  const pushBody = 'Turn it into a shareable visual';
 
   const results = await Promise.all(
     garminUserIds.map(async (garminUserId) => {
@@ -47,7 +47,7 @@ async function sendPushNotifications(
           },
           body: JSON.stringify({
             garmin_user_id: garminUserId,
-            title: 'PaceFrame',
+            title: 'Your activity is ready 🔥',
             body: pushBody,
             data: {
               provider: 'garmin',
