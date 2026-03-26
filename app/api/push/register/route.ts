@@ -10,6 +10,12 @@ type PushRegistrationPayload = {
   strava_athlete_id?: number | null;
 };
 
+type PushTokenRow = {
+  expo_push_token?: string | null;
+  garmin_user_id?: string | null;
+  strava_athlete_id?: number | null;
+};
+
 function getSupabaseConfig() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -69,6 +75,13 @@ function parseBody(body: PushRegistrationPayload | null) {
 async function upsertPushToken(row: ReturnType<typeof parseBody>) {
   const { supabaseUrl, serviceRoleKey, pushTokensTable } = getSupabaseConfig();
   const nowIso = new Date().toISOString();
+  const existingRow = await loadPushTokenByExpoToken(row.expo_push_token);
+  const mergedRow = {
+    ...row,
+    garmin_user_id: row.garmin_user_id ?? existingRow?.garmin_user_id ?? null,
+    strava_athlete_id:
+      row.strava_athlete_id ?? existingRow?.strava_athlete_id ?? null,
+  };
 
   const response = await fetch(
     `${supabaseUrl}/rest/v1/${pushTokensTable}?on_conflict=expo_push_token`,
@@ -82,7 +95,7 @@ async function upsertPushToken(row: ReturnType<typeof parseBody>) {
       },
       body: JSON.stringify([
         {
-          ...row,
+          ...mergedRow,
           updated_at: nowIso,
         },
       ]),
@@ -100,6 +113,35 @@ async function upsertPushToken(row: ReturnType<typeof parseBody>) {
   const rows = (await response.json().catch(() => [])) as Array<
     Record<string, unknown>
   >;
+  return rows[0] ?? null;
+}
+
+async function loadPushTokenByExpoToken(expoPushToken: string) {
+  const { supabaseUrl, serviceRoleKey, pushTokensTable } = getSupabaseConfig();
+  const url =
+    `${supabaseUrl}/rest/v1/${pushTokensTable}` +
+    `?select=expo_push_token,garmin_user_id,strava_athlete_id` +
+    `&expo_push_token=eq.${encodeURIComponent(expoPushToken)}` +
+    `&limit=1`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Accept: 'application/json',
+    },
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      `Failed to load existing push token. status=${response.status}; body=${details.slice(0, 500)}`,
+    );
+  }
+
+  const rows = (await response.json().catch(() => [])) as PushTokenRow[];
   return rows[0] ?? null;
 }
 
@@ -131,8 +173,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       push_token: row?.expo_push_token ?? payload.expo_push_token,
-      garmin_user_id: payload.garmin_user_id,
-      strava_athlete_id: payload.strava_athlete_id,
+      garmin_user_id: row?.garmin_user_id ?? payload.garmin_user_id,
+      strava_athlete_id: row?.strava_athlete_id ?? payload.strava_athlete_id,
     });
   } catch (error) {
     return errorResponse(error);
