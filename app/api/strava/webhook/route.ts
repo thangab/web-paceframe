@@ -22,13 +22,13 @@ function getVerifyToken() {
   return token;
 }
 
-function normalizeInteger(value: string | null) {
+function normalizeString(value: string | null) {
   if (!value) {
     return null;
   }
 
-  const parsed = Number(value);
-  return Number.isInteger(parsed) ? parsed : null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
 }
 
 function isInteger(value: unknown): value is number {
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const challengeValue = normalizeInteger(challenge);
+    const challengeValue = normalizeString(challenge);
 
     if (challengeValue === null) {
       return NextResponse.json(
