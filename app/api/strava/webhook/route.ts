@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
@@ -36,12 +36,10 @@ function isInteger(value: unknown): value is number {
 }
 
 async function sendPushNotification(
-  request: NextRequest,
+  origin: string,
   stravaAthleteId: number,
   event: StravaWebhookEvent,
 ) {
-  const origin = request.nextUrl.origin;
-
   const response = await fetch(`${origin}/api/push/send`, {
     method: 'POST',
     headers: {
@@ -74,12 +72,10 @@ async function sendPushNotification(
 }
 
 async function syncStravaActivity(
-  request: NextRequest,
+  origin: string,
   athleteId: number,
   activityId: number,
 ) {
-  const origin = request.nextUrl.origin;
-
   const response = await fetch(`${origin}/api/strava/sync`, {
     method: 'POST',
     headers: {
@@ -107,12 +103,10 @@ async function syncStravaActivity(
 }
 
 async function deleteStravaActivity(
-  request: NextRequest,
+  origin: string,
   athleteId: number,
   activityId: number,
 ) {
-  const origin = request.nextUrl.origin;
-
   const response = await fetch(`${origin}/api/strava/sync`, {
     method: 'DELETE',
     headers: {
@@ -137,6 +131,83 @@ async function deleteStravaActivity(
   }
 
   return result;
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function isRetryableSyncError(error: unknown, activityId: number) {
+  if (!(error instanceof Error)) return false;
+
+  return (
+    error.message.includes(`path=/activities/${activityId}; status=404`) ||
+    error.message.includes('status=429') ||
+    error.message.includes('status=500') ||
+    error.message.includes('status=502') ||
+    error.message.includes('status=503') ||
+    error.message.includes('status=504')
+  );
+}
+
+async function syncStravaActivityWithRetry(
+  origin: string,
+  athleteId: number,
+  activityId: number,
+) {
+  const retryDelaysMs = [1500, 4000, 8000];
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+    try {
+      return await syncStravaActivity(origin, athleteId, activityId);
+    } catch (error) {
+      lastError = error;
+      if (
+        attempt === retryDelaysMs.length ||
+        !isRetryableSyncError(error, activityId)
+      ) {
+        throw error;
+      }
+
+      await wait(retryDelaysMs[attempt]);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Failed to sync Strava activity after retries.');
+}
+
+async function processStravaWebhookEvent(
+  origin: string,
+  payload: StravaWebhookEvent,
+) {
+  const ownerId = payload.owner_id;
+  const activityId = payload.object_id;
+
+  if (!isInteger(ownerId)) {
+    throw new Error('Missing owner_id.');
+  }
+
+  if (!isInteger(activityId)) {
+    throw new Error('Missing object_id.');
+  }
+
+  if (payload.aspect_type === 'delete') {
+    await deleteStravaActivity(origin, ownerId, activityId);
+    return;
+  }
+
+  if (payload.aspect_type === 'create') {
+    await syncStravaActivityWithRetry(origin, ownerId, activityId);
+    await sendPushNotification(origin, ownerId, payload);
+    return;
+  }
+
+  await syncStravaActivity(origin, ownerId, activityId);
 }
 
 export async function GET(request: NextRequest) {
@@ -207,36 +278,35 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const ownerId = payload.owner_id;
-    const activityId = payload.object_id;
-
-    if (!isInteger(ownerId)) {
+    if (!isInteger(payload.owner_id)) {
       return NextResponse.json(
         { received: false, error: 'Missing owner_id.' },
         { status: 400 },
       );
     }
 
-    if (!isInteger(activityId)) {
+    if (!isInteger(payload.object_id)) {
       return NextResponse.json(
         { received: false, error: 'Missing object_id.' },
         { status: 400 },
       );
     }
 
-    const syncResult =
-      payload.aspect_type === 'delete'
-        ? await deleteStravaActivity(request, ownerId, activityId)
-        : await syncStravaActivity(request, ownerId, activityId);
-    const pushResult =
-      payload.aspect_type === 'create'
-        ? await sendPushNotification(request, ownerId, payload)
-        : null;
+    const origin = request.nextUrl.origin;
+    after(async () => {
+      try {
+        await processStravaWebhookEvent(origin, payload as StravaWebhookEvent);
+      } catch (error) {
+        console.error('Strava webhook background processing failed', {
+          error,
+          payload,
+        });
+      }
+    });
 
     return NextResponse.json({
       received: true,
-      syncResult,
-      pushResult,
+      scheduled: true,
     });
   } catch (error) {
     console.error('Strava webhook failed', {
