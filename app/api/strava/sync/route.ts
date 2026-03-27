@@ -16,6 +16,8 @@ function getHeartRateSampleIntervalSec() {
 type SyncRequestBody = {
   athlete_id?: number;
   athleteId?: number;
+  activity_id?: number;
+  activityId?: number;
   limit?: number;
 };
 
@@ -67,6 +69,11 @@ function sanitizeLimit(value: unknown): number {
 function parseAthleteId(body: SyncRequestBody | null) {
   const athleteId = Math.floor(toNumber(body?.athlete_id ?? body?.athleteId));
   return athleteId > 0 ? athleteId : null;
+}
+
+function parseActivityId(body: SyncRequestBody | null) {
+  const activityId = Math.floor(toNumber(body?.activity_id ?? body?.activityId));
+  return activityId > 0 ? activityId : null;
 }
 
 function extractActivityPhotoUrl(
@@ -396,6 +403,169 @@ async function upsertStravaActivities(rows: Record<string, unknown>[]) {
   }
 }
 
+async function deleteStravaActivity(athleteId: number, activityId: number) {
+  const { supabaseUrl, serviceRoleKey, stravaActivitiesTable } =
+    getSupabaseConfig();
+  const response = await fetch(
+    `${supabaseUrl}/rest/v1/${stravaActivitiesTable}?activity_id=eq.${activityId}&athlete_id=eq.${athleteId}`,
+    {
+      method: 'DELETE',
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        Prefer: 'return=minimal',
+      },
+      cache: 'no-store',
+    },
+  );
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      `Failed to delete Strava activity. status=${response.status}; body=${details.slice(0, 500)}`,
+    );
+  }
+}
+
+async function buildActivityRow(
+  athleteId: number,
+  activity: Record<string, unknown>,
+  accessToken: string,
+) {
+  const activityId = Math.floor(toNumber(activity.id));
+  if (!activityId) return null;
+
+  const [detail, photoUrl, laps, heartRate] = await Promise.all([
+    fetchActivityDetails(accessToken, activityId),
+    fetchActivityPhotos(accessToken, activityId),
+    fetchActivityLaps(accessToken, activityId),
+    fetchActivityHeartRateStream(accessToken, activityId),
+  ]);
+
+  const detailMap =
+    detail?.map && typeof detail.map === 'object'
+      ? (detail.map as { summary_polyline?: string })
+      : null;
+  const summaryMap =
+    activity.map && typeof activity.map === 'object'
+      ? (activity.map as { summary_polyline?: string })
+      : null;
+  const photosPayload =
+    detail?.photos && typeof detail.photos === 'object'
+      ? detail.photos
+      : activity.photos && typeof activity.photos === 'object'
+        ? activity.photos
+        : null;
+
+  const row: StravaActivityUpsertRow = {
+    activity_id: activityId,
+    athlete_id: athleteId,
+    name:
+      (typeof activity.name === 'string' && activity.name.trim()) ||
+      (typeof detail?.name === 'string' && detail.name.trim()) ||
+      `Strava ${activityId}`,
+    distance: toNumber(activity.distance ?? detail?.distance),
+    moving_time: Math.round(
+      toNumber(activity.moving_time ?? detail?.moving_time),
+    ),
+    elapsed_time: Math.round(
+      toNumber(activity.elapsed_time ?? detail?.elapsed_time),
+    ),
+    total_elevation_gain: toNumber(
+      activity.total_elevation_gain ?? detail?.total_elevation_gain,
+    ),
+    type:
+      (typeof activity.type === 'string' && activity.type) ||
+      (typeof detail?.type === 'string' && detail.type) ||
+      'Workout',
+    start_date:
+      (typeof activity.start_date === 'string' && activity.start_date) ||
+      (typeof detail?.start_date === 'string' && detail.start_date) ||
+      new Date().toISOString(),
+    timezone:
+      (typeof activity.timezone === 'string' && activity.timezone) ||
+      (typeof detail?.timezone === 'string' && detail.timezone) ||
+      null,
+    average_speed: toNumber(activity.average_speed ?? detail?.average_speed),
+    average_cadence:
+      typeof detail?.average_cadence === 'number'
+        ? detail.average_cadence
+        : typeof activity.average_cadence === 'number'
+          ? activity.average_cadence
+          : null,
+    average_heartrate:
+      typeof detail?.average_heartrate === 'number'
+        ? detail.average_heartrate
+        : typeof activity.average_heartrate === 'number'
+          ? activity.average_heartrate
+          : null,
+    kilojoules:
+      typeof detail?.kilojoules === 'number'
+        ? detail.kilojoules
+        : typeof activity.kilojoules === 'number'
+          ? activity.kilojoules
+          : null,
+    calories:
+      typeof detail?.calories === 'number'
+        ? detail.calories
+        : typeof activity.calories === 'number'
+          ? activity.calories
+          : null,
+    location_city:
+      (typeof detail?.location_city === 'string' && detail.location_city) ||
+      (typeof activity.location_city === 'string' && activity.location_city) ||
+      null,
+    location_state:
+      (typeof detail?.location_state === 'string' && detail.location_state) ||
+      (typeof activity.location_state === 'string' && activity.location_state) ||
+      null,
+    location_country:
+      (typeof detail?.location_country === 'string' &&
+        detail.location_country) ||
+      (typeof activity.location_country === 'string' &&
+        activity.location_country) ||
+      null,
+    device_name:
+      (typeof detail?.device_name === 'string' && detail.device_name) ||
+      (typeof activity.device_name === 'string' && activity.device_name) ||
+      null,
+    summary_polyline:
+      detailMap?.summary_polyline ?? summaryMap?.summary_polyline ?? null,
+    start_latlng:
+      (Array.isArray(detail?.start_latlng)
+        ? detail.start_latlng
+        : Array.isArray(activity.start_latlng)
+          ? activity.start_latlng
+          : null) ?? null,
+    end_latlng:
+      (Array.isArray(detail?.end_latlng)
+        ? detail.end_latlng
+        : Array.isArray(activity.end_latlng)
+          ? activity.end_latlng
+          : null) ?? null,
+    photo_url:
+      photoUrl ||
+      (detail ? extractActivityPhotoUrl(detail as never) : null) ||
+      extractActivityPhotoUrl(activity as never),
+    photos: photosPayload,
+    laps,
+    max_heartrate:
+      heartRate.maxHeartrate ??
+      (typeof detail?.max_heartrate === 'number'
+        ? detail.max_heartrate
+        : typeof activity.max_heartrate === 'number'
+          ? activity.max_heartrate
+          : null),
+    heart_rate_samples_count: heartRate.sampleCount,
+    heart_rate_stream: heartRate.points,
+    raw_summary: activity,
+    raw_detail: detail,
+    updated_at: new Date().toISOString(),
+  };
+
+  return row;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request
@@ -410,6 +580,7 @@ export async function POST(request: NextRequest) {
     }
 
     const limit = sanitizeLimit(body?.limit);
+    const activityId = parseActivityId(body);
     const connection = await loadStravaUserToken(athleteId);
 
     if (!connection?.access_token) {
@@ -439,148 +610,20 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const summaries = (await fetchStravaJson(
-      `/athlete/activities?per_page=${limit}`,
-      accessToken,
-    )) as Array<Record<string, unknown>>;
+    const summaries = activityId
+      ? [
+          ((await fetchStravaJson(
+            `/activities/${activityId}`,
+            accessToken,
+          )) as Record<string, unknown>),
+        ]
+      : ((await fetchStravaJson(
+          `/athlete/activities?per_page=${limit}`,
+          accessToken,
+        )) as Array<Record<string, unknown>>);
 
     const rawRows = await Promise.all(
-      summaries.map(async (activity) => {
-          const activityId = Math.floor(toNumber(activity.id));
-          if (!activityId) return null;
-
-          const [detail, photoUrl, laps, heartRate] = await Promise.all([
-            fetchActivityDetails(accessToken, activityId),
-            fetchActivityPhotos(accessToken, activityId),
-            fetchActivityLaps(accessToken, activityId),
-            fetchActivityHeartRateStream(accessToken, activityId),
-          ]);
-
-          const detailMap =
-            detail?.map && typeof detail.map === 'object'
-              ? (detail.map as { summary_polyline?: string })
-              : null;
-          const summaryMap =
-            activity.map && typeof activity.map === 'object'
-              ? (activity.map as { summary_polyline?: string })
-              : null;
-          const photosPayload =
-            detail?.photos && typeof detail.photos === 'object'
-              ? detail.photos
-              : activity.photos && typeof activity.photos === 'object'
-                ? activity.photos
-                : null;
-
-          const row: StravaActivityUpsertRow = {
-            activity_id: activityId,
-            athlete_id: athleteId,
-            name:
-              (typeof activity.name === 'string' && activity.name.trim()) ||
-              (typeof detail?.name === 'string' && detail.name.trim()) ||
-              `Strava ${activityId}`,
-            distance: toNumber(activity.distance),
-            moving_time: Math.round(
-              toNumber(activity.moving_time ?? detail?.moving_time),
-            ),
-            elapsed_time: Math.round(
-              toNumber(activity.elapsed_time ?? detail?.elapsed_time),
-            ),
-            total_elevation_gain: toNumber(
-              activity.total_elevation_gain ?? detail?.total_elevation_gain,
-            ),
-            type:
-              (typeof activity.type === 'string' && activity.type) ||
-              (typeof detail?.type === 'string' && detail.type) ||
-              'Workout',
-            start_date:
-              (typeof activity.start_date === 'string' && activity.start_date) ||
-              (typeof detail?.start_date === 'string' && detail.start_date) ||
-              new Date().toISOString(),
-            timezone:
-              (typeof activity.timezone === 'string' && activity.timezone) ||
-              (typeof detail?.timezone === 'string' && detail.timezone) ||
-              null,
-            average_speed: toNumber(activity.average_speed ?? detail?.average_speed),
-            average_cadence:
-              typeof detail?.average_cadence === 'number'
-                ? detail.average_cadence
-                : typeof activity.average_cadence === 'number'
-                  ? activity.average_cadence
-                  : null,
-            average_heartrate:
-              typeof detail?.average_heartrate === 'number'
-                ? detail.average_heartrate
-                : typeof activity.average_heartrate === 'number'
-                  ? activity.average_heartrate
-                  : null,
-            kilojoules:
-              typeof detail?.kilojoules === 'number'
-                ? detail.kilojoules
-                : typeof activity.kilojoules === 'number'
-                  ? activity.kilojoules
-                  : null,
-            calories:
-              typeof detail?.calories === 'number'
-                ? detail.calories
-                : typeof activity.calories === 'number'
-                  ? activity.calories
-                  : null,
-            location_city:
-              (typeof detail?.location_city === 'string' && detail.location_city) ||
-              (typeof activity.location_city === 'string' &&
-                activity.location_city) ||
-              null,
-            location_state:
-              (typeof detail?.location_state === 'string' &&
-                detail.location_state) ||
-              (typeof activity.location_state === 'string' &&
-                activity.location_state) ||
-              null,
-            location_country:
-              (typeof detail?.location_country === 'string' &&
-                detail.location_country) ||
-              (typeof activity.location_country === 'string' &&
-                activity.location_country) ||
-              null,
-            device_name:
-              (typeof detail?.device_name === 'string' && detail.device_name) ||
-              (typeof activity.device_name === 'string' && activity.device_name) ||
-              null,
-            summary_polyline:
-              detailMap?.summary_polyline ?? summaryMap?.summary_polyline ?? null,
-            start_latlng:
-              (Array.isArray(detail?.start_latlng)
-                ? detail.start_latlng
-                : Array.isArray(activity.start_latlng)
-                  ? activity.start_latlng
-                  : null) ?? null,
-            end_latlng:
-              (Array.isArray(detail?.end_latlng)
-                ? detail.end_latlng
-                : Array.isArray(activity.end_latlng)
-                  ? activity.end_latlng
-                  : null) ?? null,
-            photo_url:
-              photoUrl ||
-              (detail ? extractActivityPhotoUrl(detail as never) : null) ||
-              extractActivityPhotoUrl(activity as never),
-            photos: photosPayload,
-            laps,
-            max_heartrate:
-              heartRate.maxHeartrate ??
-              (typeof detail?.max_heartrate === 'number'
-                ? detail.max_heartrate
-                : typeof activity.max_heartrate === 'number'
-                  ? activity.max_heartrate
-                  : null),
-            heart_rate_samples_count: heartRate.sampleCount,
-            heart_rate_stream: heartRate.points,
-            raw_summary: activity,
-            raw_detail: detail,
-            updated_at: new Date().toISOString(),
-          };
-          return row;
-        }),
+      summaries.map((activity) => buildActivityRow(athleteId, activity, accessToken)),
     );
 
     const rows: StravaActivityUpsertRow[] = [];
@@ -595,12 +638,53 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       athlete_id: athleteId,
+      activity_id: activityId,
       synced: rows.length,
       limit,
     });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unexpected Strava sync error.';
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: message,
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = (await request
+      .json()
+      .catch(() => null)) as SyncRequestBody | null;
+    const athleteId = parseAthleteId(body);
+    const activityId = parseActivityId(body);
+
+    if (!athleteId || !activityId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Missing athlete_id or activity_id in request body.',
+        },
+        { status: 400 },
+      );
+    }
+
+    await deleteStravaActivity(athleteId, activityId);
+
+    return NextResponse.json({
+      success: true,
+      athlete_id: athleteId,
+      activity_id: activityId,
+      deleted: true,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Unexpected Strava delete error.';
 
     return NextResponse.json(
       {

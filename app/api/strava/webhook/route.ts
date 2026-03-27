@@ -73,6 +73,72 @@ async function sendPushNotification(
   };
 }
 
+async function syncStravaActivity(
+  request: NextRequest,
+  athleteId: number,
+  activityId: number,
+) {
+  const origin = request.nextUrl.origin;
+
+  const response = await fetch(`${origin}/api/strava/sync`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      athlete_id: athleteId,
+      activity_id: activityId,
+    }),
+    cache: 'no-store',
+  });
+
+  const result = (await response.json().catch(() => null)) as
+    | { success?: boolean; error?: string }
+    | null;
+
+  if (!response.ok || !result?.success) {
+    throw new Error(
+      result?.error ||
+        `Failed to sync Strava activity. status=${response.status}`,
+    );
+  }
+
+  return result;
+}
+
+async function deleteStravaActivity(
+  request: NextRequest,
+  athleteId: number,
+  activityId: number,
+) {
+  const origin = request.nextUrl.origin;
+
+  const response = await fetch(`${origin}/api/strava/sync`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      athlete_id: athleteId,
+      activity_id: activityId,
+    }),
+    cache: 'no-store',
+  });
+
+  const result = (await response.json().catch(() => null)) as
+    | { success?: boolean; error?: string }
+    | null;
+
+  if (!response.ok || !result?.success) {
+    throw new Error(
+      result?.error ||
+        `Failed to delete Strava activity. status=${response.status}`,
+    );
+  }
+
+  return result;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const mode = request.nextUrl.searchParams.get('hub.mode');
@@ -127,10 +193,13 @@ export async function POST(request: NextRequest) {
 
     console.log('Strava webhook payload', JSON.stringify(payload));
 
-    const isActivityCreate =
-      payload.object_type === 'activity' && payload.aspect_type === 'create';
+    const isActivityEvent = payload.object_type === 'activity';
+    const isSupportedAspect =
+      payload.aspect_type === 'create' ||
+      payload.aspect_type === 'update' ||
+      payload.aspect_type === 'delete';
 
-    if (!isActivityCreate) {
+    if (!isActivityEvent || !isSupportedAspect) {
       return NextResponse.json({
         received: true,
         skipped: true,
@@ -139,6 +208,7 @@ export async function POST(request: NextRequest) {
     }
 
     const ownerId = payload.owner_id;
+    const activityId = payload.object_id;
 
     if (!isInteger(ownerId)) {
       return NextResponse.json(
@@ -147,10 +217,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const pushResult = await sendPushNotification(request, ownerId, payload);
+    if (!isInteger(activityId)) {
+      return NextResponse.json(
+        { received: false, error: 'Missing object_id.' },
+        { status: 400 },
+      );
+    }
+
+    const syncResult =
+      payload.aspect_type === 'delete'
+        ? await deleteStravaActivity(request, ownerId, activityId)
+        : await syncStravaActivity(request, ownerId, activityId);
+    const pushResult =
+      payload.aspect_type === 'create'
+        ? await sendPushNotification(request, ownerId, payload)
+        : null;
 
     return NextResponse.json({
       received: true,
+      syncResult,
       pushResult,
     });
   } catch (error) {
