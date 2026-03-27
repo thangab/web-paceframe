@@ -5,8 +5,13 @@ export const runtime = 'nodejs';
 const DEFAULT_GARMIN_API_BASE_URL = 'https://apis.garmin.com/wellness-api';
 const GARMIN_OAUTH_TOKEN_URL =
   'https://connectapi.garmin.com/di-oauth2-service/oauth/token';
-const BACKFILL_PATH = 'rest/backfill/activities';
 const DEFAULT_BACKFILL_LOOKBACK_DAYS = 7;
+const BACKFILL_PATHS = {
+  activities: 'rest/backfill/activities',
+  activityDetails: 'rest/backfill/activityDetails',
+} as const;
+
+type BackfillType = keyof typeof BACKFILL_PATHS;
 
 type BackfillRequestBody = {
   garmin_user_id?: string;
@@ -132,6 +137,7 @@ async function updateGarminUserToken(params: {
 
 async function callBackfill(params: {
   baseUrl: string;
+  path: string;
   accessToken: string;
   summaryStartTimeInSeconds: number;
   summaryEndTimeInSeconds: number;
@@ -139,7 +145,7 @@ async function callBackfill(params: {
   const normalizedBase = params.baseUrl.endsWith('/')
     ? params.baseUrl
     : `${params.baseUrl}/`;
-  const url = new URL(BACKFILL_PATH, normalizedBase);
+  const url = new URL(params.path, normalizedBase);
 
   if (!url.hostname.includes('garmin.com')) {
     throw new Error(
@@ -165,6 +171,15 @@ async function callBackfill(params: {
     cache: 'no-store',
   });
 }
+
+type GarminBackfillRequestResult = {
+  type: BackfillType;
+  success: boolean;
+  status: number;
+  duplicate?: boolean;
+  adjustedStartTimeInSeconds?: number;
+  details?: string;
+};
 
 async function refreshGarminAccessToken(refreshToken: string) {
   const clientId = process.env.GARMIN_CLIENT_ID;
@@ -203,6 +218,149 @@ async function refreshGarminAccessToken(refreshToken: string) {
   }
 
   return payload;
+}
+
+async function requestBackfillType(params: {
+  type: BackfillType;
+  garminUserId: string;
+  baseUrl: string;
+  accessToken: string;
+  refreshToken: string | null;
+  summaryStartTimeInSeconds: number;
+  summaryEndTimeInSeconds: number;
+}) {
+  const path = BACKFILL_PATHS[params.type];
+  let accessToken = params.accessToken;
+  let response = await callBackfill({
+    baseUrl: params.baseUrl,
+    path,
+    accessToken,
+    summaryStartTimeInSeconds: params.summaryStartTimeInSeconds,
+    summaryEndTimeInSeconds: params.summaryEndTimeInSeconds,
+  });
+
+  if (response.status === 401 && params.refreshToken) {
+    try {
+      const refreshed = await refreshGarminAccessToken(params.refreshToken);
+      if (refreshed?.access_token) {
+        accessToken = refreshed.access_token;
+        await updateGarminUserToken({
+          garminUserId: params.garminUserId,
+          accessToken: refreshed.access_token,
+          refreshToken: refreshed.refresh_token ?? params.refreshToken,
+          expiresIn: refreshed.expires_in,
+          refreshTokenExpiresIn: refreshed.refresh_token_expires_in,
+        });
+
+        response = await callBackfill({
+          baseUrl: params.baseUrl,
+          path,
+          accessToken,
+          summaryStartTimeInSeconds: params.summaryStartTimeInSeconds,
+          summaryEndTimeInSeconds: params.summaryEndTimeInSeconds,
+        });
+      }
+    } catch (refreshError) {
+      console.error('Garmin backfill refresh failed', refreshError);
+    }
+  }
+
+  console.log('Garmin backfill response', {
+    garminUserId: params.garminUserId,
+    type: params.type,
+    status: response.status,
+    summaryStartTimeInSeconds: params.summaryStartTimeInSeconds,
+    summaryEndTimeInSeconds: params.summaryEndTimeInSeconds,
+  });
+
+  if (response.status === 200 || response.status === 202) {
+    return {
+      accessToken,
+      result: {
+        type: params.type,
+        success: true,
+        status: response.status,
+      } satisfies GarminBackfillRequestResult,
+    };
+  }
+
+  if (response.status === 409) {
+    const details = await response.text();
+    const isDuplicateBackfill = /duplicate backfill/i.test(details);
+
+    if (isDuplicateBackfill) {
+      return {
+        accessToken,
+        result: {
+          type: params.type,
+          success: true,
+          status: response.status,
+          duplicate: true,
+        } satisfies GarminBackfillRequestResult,
+      };
+    }
+
+    return {
+      accessToken,
+      result: {
+        type: params.type,
+        success: false,
+        status: response.status,
+        details: details.slice(0, 1000),
+      } satisfies GarminBackfillRequestResult,
+    };
+  }
+
+  let details = await response.text();
+
+  if (response.status === 400) {
+    const minStart = parseMinStartTimeFromGarminError(details);
+    if (
+      minStart &&
+      minStart > params.summaryStartTimeInSeconds &&
+      minStart < params.summaryEndTimeInSeconds
+    ) {
+      response = await callBackfill({
+        baseUrl: params.baseUrl,
+        path,
+        accessToken,
+        summaryStartTimeInSeconds: minStart,
+        summaryEndTimeInSeconds: params.summaryEndTimeInSeconds,
+      });
+
+      console.log('Garmin backfill retried with min start time', {
+        garminUserId: params.garminUserId,
+        type: params.type,
+        minStart,
+        summaryEndTimeInSeconds: params.summaryEndTimeInSeconds,
+        status: response.status,
+      });
+
+      if (response.status === 200 || response.status === 202) {
+        return {
+          accessToken,
+          result: {
+            type: params.type,
+            success: true,
+            status: response.status,
+            adjustedStartTimeInSeconds: minStart,
+          } satisfies GarminBackfillRequestResult,
+        };
+      }
+
+      details = await response.text();
+    }
+  }
+
+  return {
+    accessToken,
+    result: {
+      type: params.type,
+      success: false,
+      status: response.status,
+      details: details.slice(0, 1000),
+    } satisfies GarminBackfillRequestResult,
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -246,116 +404,41 @@ export async function POST(request: NextRequest) {
     const summaryStartTimeInSeconds = summaryEndTimeInSeconds - lookbackSeconds;
 
     let accessToken = connection.access_token;
-    let response = await callBackfill({
-      baseUrl,
-      accessToken,
-      summaryStartTimeInSeconds,
-      summaryEndTimeInSeconds,
-    });
+    const results: GarminBackfillRequestResult[] = [];
 
-    if (response.status === 401 && connection.refresh_token) {
-      try {
-        const refreshed = await refreshGarminAccessToken(connection.refresh_token);
-        if (refreshed?.access_token) {
-          accessToken = refreshed.access_token;
-          await updateGarminUserToken({
-            garminUserId,
-            accessToken: refreshed.access_token,
-            refreshToken: refreshed.refresh_token ?? connection.refresh_token,
-            expiresIn: refreshed.expires_in,
-            refreshTokenExpiresIn: refreshed.refresh_token_expires_in,
-          });
+    for (const type of Object.keys(BACKFILL_PATHS) as BackfillType[]) {
+      const outcome = await requestBackfillType({
+        type,
+        garminUserId,
+        baseUrl,
+        accessToken,
+        refreshToken: connection.refresh_token,
+        summaryStartTimeInSeconds,
+        summaryEndTimeInSeconds,
+      });
 
-          response = await callBackfill({
-            baseUrl,
-            accessToken,
-            summaryStartTimeInSeconds,
-            summaryEndTimeInSeconds,
-          });
-        }
-      } catch (refreshError) {
-        console.error('Garmin backfill refresh failed', refreshError);
-      }
+      accessToken = outcome.accessToken;
+      results.push(outcome.result);
     }
 
-    console.log('Garmin backfill response', {
-      garminUserId,
-      status: response.status,
-      summaryStartTimeInSeconds,
-      summaryEndTimeInSeconds,
-    });
+    const failedResult = results.find((result) => !result.success);
 
-    if (!(response.status === 202 || response.status === 200 || response.status === 409)) {
-      const details = await response.text();
-
-      // Garmin can reject old ranges with:
-      // "start ... before min start time of ..."
-      // Retry once with the provider min start boundary.
-      if (response.status === 400) {
-        const minStart = parseMinStartTimeFromGarminError(details);
-        if (
-          minStart &&
-          minStart > summaryStartTimeInSeconds &&
-          minStart < summaryEndTimeInSeconds
-        ) {
-          response = await callBackfill({
-            baseUrl,
-            accessToken,
-            summaryStartTimeInSeconds: minStart,
-            summaryEndTimeInSeconds,
-          });
-
-          console.log('Garmin backfill retried with min start time', {
-            garminUserId,
-            minStart,
-            summaryEndTimeInSeconds,
-            status: response.status,
-          });
-
-          if (response.status === 200 || response.status === 202) {
-            return NextResponse.json({
-              success: true,
-              adjustedStartTimeInSeconds: minStart,
-            });
-          }
-        }
-      }
-
+    if (failedResult) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Garmin backfill request failed.',
-          status: response.status,
-          details: details.slice(0, 1000),
+          error: `Garmin backfill request failed for ${failedResult.type}.`,
+          results,
         },
-        { status: 502 },
+        { status: failedResult.status === 409 ? 409 : 502 },
       );
     }
 
-    if (response.status === 409) {
-      const details = await response.text();
-      const isDuplicateBackfill = /duplicate backfill/i.test(details);
-
-      if (isDuplicateBackfill) {
-        return NextResponse.json({
-          success: true,
-          duplicate: true,
-          message: 'Backfill already requested for this time window.',
-        });
-      }
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Garmin backfill conflict.',
-          status: response.status,
-          details: details.slice(0, 1000),
-        },
-        { status: 409 },
-      );
-    }
-
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      duplicate: results.every((result) => result.duplicate),
+      results,
+    });
   } catch (error) {
     console.error('Garmin backfill route error', error);
     return NextResponse.json(
