@@ -104,6 +104,22 @@ function extractActivityPhotoUrl(
   );
 }
 
+function extractActivityPhotoThumbUrl(
+  activity: { photos?: { primary?: { urls?: Record<string, string> | null } | null } | null },
+): string | null {
+  const urls = activity.photos?.primary?.urls;
+  if (!urls) return null;
+
+  return (
+    urls['600'] ??
+    urls['100'] ??
+    urls['1024'] ??
+    urls['2048'] ??
+    Object.values(urls).find((value) => typeof value === 'string') ??
+    null
+  );
+}
+
 async function loadStravaUserToken(athleteId: number) {
   const { supabaseUrl, serviceRoleKey, stravaUsersTable } = getSupabaseConfig();
   const lookupUrl =
@@ -289,20 +305,28 @@ async function fetchActivityPhotos(accessToken: string, activityId: number) {
     const first = photos[0];
     if (!first?.urls) return null;
 
-    const directBest =
-      first.urls['2048'] ?? first.urls['1024'] ?? first.urls['600'];
-    if (directBest) return directBest;
-
-    const numericBest = Object.entries(first.urls)
-      .filter(([key, value]) => Number.isFinite(Number(key)) && Boolean(value))
-      .sort((a, b) => Number(b[0]) - Number(a[0]))[0]?.[1];
-    if (numericBest) return numericBest;
-
-    return (
+    const best =
+      first.urls['2048'] ??
+      first.urls['1024'] ??
+      first.urls['600'] ??
+      Object.entries(first.urls)
+        .filter(([key, value]) => Number.isFinite(Number(key)) && Boolean(value))
+        .sort((a, b) => Number(b[0]) - Number(a[0]))[0]?.[1] ??
       first.urls['100'] ??
       Object.values(first.urls).find((value) => typeof value === 'string') ??
-      null
-    );
+      null;
+    const thumb =
+      first.urls['600'] ??
+      first.urls['100'] ??
+      first.urls['1024'] ??
+      first.urls['2048'] ??
+      Object.values(first.urls).find((value) => typeof value === 'string') ??
+      null;
+
+    return {
+      best,
+      thumb,
+    };
   } catch {
     return null;
   }
@@ -480,24 +504,27 @@ async function buildActivityRow(
   if (!activityId) return null;
   const shouldFetchFullDetails =
     mode === 'full' && !existingActivity?.details_fetched_at;
+  const shouldFetchPhoto = mode === 'light' || shouldFetchFullDetails;
 
   const detail =
     shouldFetchFullDetails
       ? (prefetchedDetail ??
         (await fetchActivityDetails(accessToken, activityId)))
       : null;
-  const [photoUrl, laps, heartRate] =
+  const [photoUrls, laps, heartRate] =
     shouldFetchFullDetails
       ? await Promise.all([
           fetchActivityPhotos(accessToken, activityId),
           fetchActivityLaps(accessToken, activityId),
           fetchActivityHeartRateStream(accessToken, activityId),
         ])
-      : [
-          null,
-          undefined,
-          undefined,
-        ];
+      : shouldFetchPhoto
+        ? [await fetchActivityPhotos(accessToken, activityId), undefined, undefined]
+        : [
+            null,
+            undefined,
+            undefined,
+          ];
 
   const detailMap =
     detail?.map && typeof detail.map === 'object'
@@ -588,7 +615,14 @@ async function buildActivityRow(
       null,
     summary_polyline:
       detailMap?.summary_polyline ?? summaryMap?.summary_polyline ?? null,
-    photo_url: extractActivityPhotoUrl(activity as never),
+    photo_url:
+      photoUrls?.best ||
+      (detail ? extractActivityPhotoUrl(detail as never) : null) ||
+      extractActivityPhotoUrl(activity as never),
+    photo_thumb_url:
+      photoUrls?.thumb ||
+      (detail ? extractActivityPhotoThumbUrl(detail as never) : null) ||
+      extractActivityPhotoThumbUrl(activity as never),
     raw_summary: activity,
     updated_at: new Date().toISOString(),
   };
@@ -606,10 +640,6 @@ async function buildActivityRow(
         : Array.isArray(activity.end_latlng)
           ? activity.end_latlng
           : null) ?? null;
-    row.photo_url =
-      photoUrl ||
-      (detail ? extractActivityPhotoUrl(detail as never) : null) ||
-      extractActivityPhotoUrl(activity as never);
     row.photos = photosPayload;
     row.laps = laps ?? [];
     row.max_heartrate =
