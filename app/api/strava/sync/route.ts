@@ -29,6 +29,7 @@ type StravaUserRow = {
 };
 
 type StravaActivityUpsertRow = Record<string, unknown>;
+type StravaSyncMode = 'light' | 'full';
 
 function getSupabaseConfig() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -431,16 +432,29 @@ async function buildActivityRow(
   athleteId: number,
   activity: Record<string, unknown>,
   accessToken: string,
+  mode: StravaSyncMode,
+  prefetchedDetail?: Record<string, unknown> | null,
 ) {
   const activityId = Math.floor(toNumber(activity.id));
   if (!activityId) return null;
 
-  const [detail, photoUrl, laps, heartRate] = await Promise.all([
-    fetchActivityDetails(accessToken, activityId),
-    fetchActivityPhotos(accessToken, activityId),
-    fetchActivityLaps(accessToken, activityId),
-    fetchActivityHeartRateStream(accessToken, activityId),
-  ]);
+  const detail =
+    mode === 'full'
+      ? (prefetchedDetail ??
+        (await fetchActivityDetails(accessToken, activityId)))
+      : null;
+  const [photoUrl, laps, heartRate] =
+    mode === 'full'
+      ? await Promise.all([
+          fetchActivityPhotos(accessToken, activityId),
+          fetchActivityLaps(accessToken, activityId),
+          fetchActivityHeartRateStream(accessToken, activityId),
+        ])
+      : [
+          null,
+          undefined,
+          undefined,
+        ];
 
   const detailMap =
     detail?.map && typeof detail.map === 'object'
@@ -531,37 +545,40 @@ async function buildActivityRow(
       null,
     summary_polyline:
       detailMap?.summary_polyline ?? summaryMap?.summary_polyline ?? null,
-    start_latlng:
+    raw_summary: activity,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (mode === 'full') {
+    row.start_latlng =
       (Array.isArray(detail?.start_latlng)
         ? detail.start_latlng
         : Array.isArray(activity.start_latlng)
           ? activity.start_latlng
-          : null) ?? null,
-    end_latlng:
+          : null) ?? null;
+    row.end_latlng =
       (Array.isArray(detail?.end_latlng)
         ? detail.end_latlng
         : Array.isArray(activity.end_latlng)
           ? activity.end_latlng
-          : null) ?? null,
-    photo_url:
+          : null) ?? null;
+    row.photo_url =
       photoUrl ||
       (detail ? extractActivityPhotoUrl(detail as never) : null) ||
-      extractActivityPhotoUrl(activity as never),
-    photos: photosPayload,
-    laps,
-    max_heartrate:
-      heartRate.maxHeartrate ??
+      extractActivityPhotoUrl(activity as never);
+    row.photos = photosPayload;
+    row.laps = laps ?? [];
+    row.max_heartrate =
+      heartRate?.maxHeartrate ??
       (typeof detail?.max_heartrate === 'number'
         ? detail.max_heartrate
         : typeof activity.max_heartrate === 'number'
           ? activity.max_heartrate
-          : null),
-    heart_rate_samples_count: heartRate.sampleCount,
-    heart_rate_stream: heartRate.points,
-    raw_summary: activity,
-    raw_detail: detail,
-    updated_at: new Date().toISOString(),
-  };
+          : null);
+    row.heart_rate_samples_count = heartRate?.sampleCount ?? 0;
+    row.heart_rate_stream = heartRate?.points ?? [];
+    row.raw_detail = detail;
+  }
 
   return row;
 }
@@ -581,6 +598,7 @@ export async function POST(request: NextRequest) {
 
     const limit = sanitizeLimit(body?.limit);
     const activityId = parseActivityId(body);
+    const mode: StravaSyncMode = activityId ? 'full' : 'light';
     const connection = await loadStravaUserToken(athleteId);
 
     if (!connection?.access_token) {
@@ -623,7 +641,15 @@ export async function POST(request: NextRequest) {
         )) as Array<Record<string, unknown>>);
 
     const rawRows = await Promise.all(
-      summaries.map((activity) => buildActivityRow(athleteId, activity, accessToken)),
+      summaries.map((activity) =>
+        buildActivityRow(
+          athleteId,
+          activity,
+          accessToken,
+          mode,
+          activityId ? activity : null,
+        ),
+      ),
     );
 
     const rows: StravaActivityUpsertRow[] = [];
@@ -639,6 +665,7 @@ export async function POST(request: NextRequest) {
       success: true,
       athlete_id: athleteId,
       activity_id: activityId,
+      mode,
       synced: rows.length,
       limit,
     });
