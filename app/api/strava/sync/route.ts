@@ -31,6 +31,7 @@ type StravaUserRow = {
 type StravaActivityExistingRow = {
   activity_id: number;
   athlete_id: number;
+  photo_fetched_at: string | null;
   details_fetched_at: string | null;
 };
 
@@ -197,7 +198,7 @@ async function loadExistingStravaActivity(
     getSupabaseConfig();
   const lookupUrl =
     `${supabaseUrl}/rest/v1/${stravaActivitiesTable}` +
-    `?select=activity_id,athlete_id,details_fetched_at` +
+    `?select=activity_id,athlete_id,photo_fetched_at,details_fetched_at` +
     `&activity_id=eq.${activityId}` +
     `&athlete_id=eq.${athleteId}` +
     '&limit=1';
@@ -504,7 +505,7 @@ async function buildActivityRow(
   if (!activityId) return null;
   const shouldFetchFullDetails =
     mode === 'full' && !existingActivity?.details_fetched_at;
-  const shouldFetchPhoto = mode === 'light' || shouldFetchFullDetails;
+  const shouldFetchPhoto = !existingActivity?.photo_fetched_at;
 
   const detail =
     shouldFetchFullDetails
@@ -626,6 +627,10 @@ async function buildActivityRow(
     raw_summary: activity,
     updated_at: new Date().toISOString(),
   };
+
+  if (photoUrls) {
+    row.photo_fetched_at = new Date().toISOString();
+  }
 
   if (shouldFetchFullDetails) {
     row.start_latlng =
