@@ -28,6 +28,12 @@ type StravaUserRow = {
   expires_at: number | null;
 };
 
+type StravaActivityExistingRow = {
+  activity_id: number;
+  athlete_id: number;
+  details_fetched_at: string | null;
+};
+
 type StravaActivityUpsertRow = Record<string, unknown>;
 type StravaSyncMode = 'light' | 'full';
 
@@ -165,6 +171,40 @@ async function updateStravaUserToken(params: {
       `Failed to update Strava user token. status=${response.status}; body=${details.slice(0, 500)}`,
     );
   }
+}
+
+async function loadExistingStravaActivity(
+  athleteId: number,
+  activityId: number,
+) {
+  const { supabaseUrl, serviceRoleKey, stravaActivitiesTable } =
+    getSupabaseConfig();
+  const lookupUrl =
+    `${supabaseUrl}/rest/v1/${stravaActivitiesTable}` +
+    `?select=activity_id,athlete_id,details_fetched_at` +
+    `&activity_id=eq.${activityId}` +
+    `&athlete_id=eq.${athleteId}` +
+    '&limit=1';
+
+  const response = await fetch(lookupUrl, {
+    method: 'GET',
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Accept: 'application/json',
+    },
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      `Failed to load Strava activity. status=${response.status}; body=${details.slice(0, 500)}`,
+    );
+  }
+
+  const rows = (await response.json()) as StravaActivityExistingRow[];
+  return rows[0] ?? null;
 }
 
 async function refreshStravaAccessToken(refreshToken: string) {
@@ -434,17 +474,20 @@ async function buildActivityRow(
   accessToken: string,
   mode: StravaSyncMode,
   prefetchedDetail?: Record<string, unknown> | null,
+  existingActivity?: StravaActivityExistingRow | null,
 ) {
   const activityId = Math.floor(toNumber(activity.id));
   if (!activityId) return null;
+  const shouldFetchFullDetails =
+    mode === 'full' && !existingActivity?.details_fetched_at;
 
   const detail =
-    mode === 'full'
+    shouldFetchFullDetails
       ? (prefetchedDetail ??
         (await fetchActivityDetails(accessToken, activityId)))
       : null;
   const [photoUrl, laps, heartRate] =
-    mode === 'full'
+    shouldFetchFullDetails
       ? await Promise.all([
           fetchActivityPhotos(accessToken, activityId),
           fetchActivityLaps(accessToken, activityId),
@@ -549,7 +592,7 @@ async function buildActivityRow(
     updated_at: new Date().toISOString(),
   };
 
-  if (mode === 'full') {
+  if (shouldFetchFullDetails) {
     row.start_latlng =
       (Array.isArray(detail?.start_latlng)
         ? detail.start_latlng
@@ -577,6 +620,7 @@ async function buildActivityRow(
           : null);
     row.heart_rate_samples_count = heartRate?.sampleCount ?? 0;
     row.heart_rate_stream = heartRate?.points ?? [];
+    row.details_fetched_at = new Date().toISOString();
     row.raw_detail = detail;
   }
 
@@ -628,6 +672,23 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const existingActivity = activityId
+      ? await loadExistingStravaActivity(athleteId, activityId)
+      : null;
+
+    if (activityId && existingActivity?.details_fetched_at) {
+      return NextResponse.json({
+        success: true,
+        athlete_id: athleteId,
+        activity_id: activityId,
+        mode,
+        skipped: true,
+        reason: 'details_already_fetched',
+        synced: 0,
+        limit,
+      });
+    }
+
     const summaries = activityId
       ? [
           ((await fetchStravaJson(
@@ -648,6 +709,7 @@ export async function POST(request: NextRequest) {
           accessToken,
           mode,
           activityId ? activity : null,
+          activityId ? existingActivity : null,
         ),
       ),
     );
