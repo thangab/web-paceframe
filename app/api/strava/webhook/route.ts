@@ -148,8 +148,70 @@ function isRetryableSyncError(error: unknown, activityId: number) {
     error.message.includes('status=500') ||
     error.message.includes('status=502') ||
     error.message.includes('status=503') ||
-    error.message.includes('status=504')
+    error.message.includes('status=504') ||
+    error.message.includes('status=597') ||
+    error.message.includes('temporarily unavailable')
   );
+}
+
+function classifyStravaProcessingError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return {
+      retryable: false,
+      category: 'unknown',
+      message: 'Unknown Strava webhook processing error.',
+    };
+  }
+
+  const retryable =
+    error.message.includes('status=429') ||
+    error.message.includes('status=500') ||
+    error.message.includes('status=502') ||
+    error.message.includes('status=503') ||
+    error.message.includes('status=504') ||
+    error.message.includes('status=597') ||
+    error.message.includes('temporarily unavailable');
+
+  if (
+    error.message.includes('status=597') ||
+    error.message.includes('temporarily unavailable')
+  ) {
+    return {
+      retryable,
+      category: 'strava_unavailable',
+      message: error.message,
+    };
+  }
+
+  if (error.message.includes('status=429')) {
+    return {
+      retryable,
+      category: 'rate_limited',
+      message: error.message,
+    };
+  }
+
+  if (error.message.includes('Missing STRAVA_CLIENT_ID or STRAVA_CLIENT_SECRET')) {
+    return {
+      retryable: false,
+      category: 'missing_credentials',
+      message: error.message,
+    };
+  }
+
+  if (error.message.includes('status=404')) {
+    return {
+      retryable: true,
+      category: 'not_ready',
+      message: error.message,
+    };
+  }
+
+  return {
+    retryable,
+    category: 'sync_failed',
+    message: error.message,
+  };
 }
 
 async function syncStravaActivityWithRetry(
@@ -157,7 +219,7 @@ async function syncStravaActivityWithRetry(
   athleteId: number,
   activityId: number,
 ) {
-  const retryDelaysMs = [1500, 4000, 8000];
+  const retryDelaysMs = [1500, 4000, 8000, 15000];
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
@@ -171,6 +233,14 @@ async function syncStravaActivityWithRetry(
       ) {
         throw error;
       }
+
+      console.warn('Retrying Strava activity sync after transient failure', {
+        activityId,
+        athleteId,
+        attempt: attempt + 1,
+        nextDelayMs: retryDelaysMs[attempt],
+        error: error instanceof Error ? error.message : error,
+      });
 
       await wait(retryDelaysMs[attempt]);
     }
@@ -297,8 +367,11 @@ export async function POST(request: NextRequest) {
       try {
         await processStravaWebhookEvent(origin, payload as StravaWebhookEvent);
       } catch (error) {
+        const classified = classifyStravaProcessingError(error);
         console.error('Strava webhook background processing failed', {
-          error,
+          error: classified.message,
+          category: classified.category,
+          retryable: classified.retryable,
           payload,
         });
       }
