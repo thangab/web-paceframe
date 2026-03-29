@@ -588,6 +588,7 @@ async function buildActivityRow(
       null,
     summary_polyline:
       detailMap?.summary_polyline ?? summaryMap?.summary_polyline ?? null,
+    photo_url: extractActivityPhotoUrl(activity as never),
     raw_summary: activity,
     updated_at: new Date().toISOString(),
   };
