@@ -4,6 +4,14 @@ import { GarminPingPayload } from '@/lib/garmin/types';
 
 export const runtime = 'nodejs';
 
+export async function GET(request: NextRequest) {
+  return NextResponse.json({
+    ok: true,
+    endpoint: `${request.nextUrl.origin}/api/garmin/ping`,
+    message: 'Use this URL as the Garmin manual activity update callback.',
+  });
+}
+
 function extractGarminUserIds(payload: GarminPingPayload) {
   const userIds = new Set<string>();
 
@@ -13,6 +21,9 @@ function extractGarminUserIds(payload: GarminPingPayload) {
 
   const candidates = [
     ...(Array.isArray(payload.activities) ? payload.activities : []),
+    ...(Array.isArray(payload.manuallyUpdatedActivities)
+      ? payload.manuallyUpdatedActivities
+      : []),
     ...(Array.isArray(payload.activityDetails) ? payload.activityDetails : []),
   ];
 
@@ -109,7 +120,9 @@ export async function POST(request: NextRequest) {
     const result = await processGarminPing(payload);
     console.log('Garmin ping process response', JSON.stringify(result));
     const hasActivityPayload =
-      Array.isArray(payload.activities) && payload.activities.length > 0;
+      (Array.isArray(payload.activities) && payload.activities.length > 0) ||
+      (Array.isArray(payload.manuallyUpdatedActivities) &&
+        payload.manuallyUpdatedActivities.length > 0);
     const hasInsertedActivities =
       hasActivityPayload && result.activities.inserted > 0;
     const garminUserIds = extractGarminUserIds(payload);

@@ -5,6 +5,7 @@ export type GarminPingActivity = {
 export type GarminPingPayload = {
   userId?: string;
   activities?: GarminActivityPayload[];
+  manuallyUpdatedActivities?: GarminActivityPayload[];
   activityDetails?: GarminActivityDetailPayload[];
 };
 

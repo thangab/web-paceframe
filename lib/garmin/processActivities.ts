@@ -324,6 +324,9 @@ export async function processGarminPing(
   payload: GarminPingPayload,
 ): Promise<GarminPingProcessSummary> {
   const activities = Array.isArray(payload.activities) ? payload.activities : [];
+  const manuallyUpdatedActivities = Array.isArray(payload.manuallyUpdatedActivities)
+    ? payload.manuallyUpdatedActivities
+    : [];
   const activityDetails = Array.isArray(payload.activityDetails)
     ? payload.activityDetails
     : [];
@@ -348,7 +351,11 @@ export async function processGarminPing(
       ): item is GarminPersistedActivitySummary => item !== null,
     );
   const summariesToPersist =
-    activities.length > 0 ? activities : detailSummaries;
+    activities.length > 0
+      ? activities
+      : manuallyUpdatedActivities.length > 0
+        ? manuallyUpdatedActivities
+        : detailSummaries;
 
   const activitySummaryUserIds = new Map<string, string>();
 
@@ -383,6 +390,7 @@ export async function processGarminPing(
 
   console.log('Garmin ping payload received', {
     activitiesCount: activities.length,
+    manuallyUpdatedActivitiesCount: manuallyUpdatedActivities.length,
     summariesPersistedCount: summariesToPersist.length,
     activityDetailsCount: activityDetails.length,
     hasPayloadUserId: !!payloadUserId,
