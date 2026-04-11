@@ -10,6 +10,8 @@ type SendPushPayload = {
   data?: Record<string, unknown>;
 };
 
+type Provider = 'garmin' | 'strava';
+
 type PushTokenRow = {
   expo_push_token: string;
 };
@@ -72,6 +74,38 @@ function normalizeNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function normalizeProvider(value: unknown): Provider | null {
+  return value === 'garmin' || value === 'strava' ? value : null;
+}
+
+function inferProvider({
+  garminUserId,
+  stravaAthleteId,
+  data,
+}: {
+  garminUserId: string | null;
+  stravaAthleteId: number | null;
+  data: Record<string, unknown>;
+}) {
+  const providerFromData = normalizeProvider(data.provider);
+
+  if (providerFromData) {
+    return providerFromData;
+  }
+
+  if (garminUserId && stravaAthleteId === null) {
+    return 'garmin';
+  }
+
+  if (!garminUserId && stravaAthleteId !== null) {
+    return 'strava';
+  }
+
+  throw new Error(
+    'Unable to determine provider. Include data.provider or pass a single provider identifier.',
+  );
+}
+
 function parseBody(body: SendPushPayload | null) {
   const garminUserId = normalizeString(body?.garmin_user_id);
   const stravaAthleteId = normalizeNumber(body?.strava_athlete_id);
@@ -87,7 +121,14 @@ function parseBody(body: SendPushPayload | null) {
     throw new Error('Missing body.');
   }
 
+  const activeProvider = inferProvider({
+    garminUserId,
+    stravaAthleteId,
+    data,
+  });
+
   return {
+    activeProvider,
     garminUserId,
     stravaAthleteId,
     title,
@@ -109,27 +150,37 @@ function chunkArray<T>(items: T[], size: number) {
 }
 
 function buildPushTokenLookupQuery({
+  activeProvider,
   garminUserId,
   stravaAthleteId,
 }: {
+  activeProvider: Provider;
   garminUserId: string | null;
   stravaAthleteId: number | null;
 }) {
   if (garminUserId) {
-    return `garmin_user_id=eq.${encodeURIComponent(garminUserId)}`;
+    return (
+      `garmin_user_id=eq.${encodeURIComponent(garminUserId)}` +
+      `&active_provider=eq.${activeProvider}`
+    );
   }
 
   if (stravaAthleteId !== null) {
-    return `strava_athlete_id=eq.${stravaAthleteId}`;
+    return (
+      `strava_athlete_id=eq.${stravaAthleteId}` +
+      `&active_provider=eq.${activeProvider}`
+    );
   }
 
   throw new Error('Missing garmin_user_id or strava_athlete_id.');
 }
 
 async function loadPushTokens({
+  activeProvider,
   garminUserId,
   stravaAthleteId,
 }: {
+  activeProvider: Provider;
   garminUserId: string | null;
   stravaAthleteId: number | null;
 }) {
@@ -137,7 +188,11 @@ async function loadPushTokens({
   const url =
     `${supabaseUrl}/rest/v1/${pushTokensTable}` +
     `?select=expo_push_token` +
-    `&${buildPushTokenLookupQuery({ garminUserId, stravaAthleteId })}`;
+    `&${buildPushTokenLookupQuery({
+      activeProvider,
+      garminUserId,
+      stravaAthleteId,
+    })}`;
 
   const response = await fetch(url, {
     method: 'GET',
@@ -263,6 +318,7 @@ export async function POST(request: NextRequest) {
     const payload = parseBody(body);
 
     const allTokens = await loadPushTokens({
+      activeProvider: payload.activeProvider,
       garminUserId: payload.garminUserId,
       stravaAthleteId: payload.stravaAthleteId,
     });
@@ -350,6 +406,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      active_provider: payload.activeProvider,
       garmin_user_id: payload.garminUserId,
       strava_athlete_id: payload.stravaAthleteId,
       tokens_total: allTokens.length,
