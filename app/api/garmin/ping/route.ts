@@ -12,22 +12,16 @@ export async function GET(request: NextRequest) {
   });
 }
 
-function extractGarminUserIds(payload: GarminPingPayload) {
+function extractGarminActivityUserIds(payload: GarminPingPayload) {
   const userIds = new Set<string>();
 
   if (typeof payload.userId === 'string' && payload.userId.trim()) {
     userIds.add(payload.userId.trim());
   }
 
-  const candidates = [
-    ...(Array.isArray(payload.activities) ? payload.activities : []),
-    ...(Array.isArray(payload.manuallyUpdatedActivities)
-      ? payload.manuallyUpdatedActivities
-      : []),
-    ...(Array.isArray(payload.activityDetails) ? payload.activityDetails : []),
-  ];
+  const activities = Array.isArray(payload.activities) ? payload.activities : [];
 
-  for (const item of candidates) {
+  for (const item of activities) {
     if (typeof item.userId === 'string' && item.userId.trim()) {
       userIds.add(item.userId.trim());
     }
@@ -120,12 +114,10 @@ export async function POST(request: NextRequest) {
     const result = await processGarminPing(payload);
     console.log('Garmin ping process response', JSON.stringify(result));
     const hasActivityPayload =
-      (Array.isArray(payload.activities) && payload.activities.length > 0) ||
-      (Array.isArray(payload.manuallyUpdatedActivities) &&
-        payload.manuallyUpdatedActivities.length > 0);
+      Array.isArray(payload.activities) && payload.activities.length > 0;
     const hasInsertedActivities =
       hasActivityPayload && result.activities.inserted > 0;
-    const garminUserIds = extractGarminUserIds(payload);
+    const garminUserIds = extractGarminActivityUserIds(payload);
 
     const pushResults = hasInsertedActivities
       ? await sendPushNotifications(request, garminUserIds)
