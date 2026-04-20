@@ -712,19 +712,6 @@ export async function POST(request: NextRequest) {
       ? await loadExistingStravaActivity(athleteId, activityId)
       : null;
 
-    if (activityId && existingActivity?.details_fetched_at) {
-      return NextResponse.json({
-        success: true,
-        athlete_id: athleteId,
-        activity_id: activityId,
-        mode,
-        skipped: true,
-        reason: 'details_already_fetched',
-        synced: 0,
-        limit,
-      });
-    }
-
     const summaries = activityId
       ? [
           ((await fetchStravaJson(
