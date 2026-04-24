@@ -1,6 +1,7 @@
 import type { GarminSample, SamplesVisualization, ChartPoint } from './types';
 
 type Point = [number, number];
+const GARMIN_POLYLINE_SIMPLIFY_TOLERANCE = 0.00003;
 
 function encodeSignedNumber(num: number) {
   let sgnNum = num << 1;
@@ -58,7 +59,8 @@ function perpendicularDistance(
   return Math.hypot(x - projX, y - projY);
 }
 
-// tolerance ~ 0.0001 ≈ ~11m (à Paris)
+// Keep more detail than the original ~11m simplification to better match
+// provider-rendered routes while still avoiding storing every raw GPS point.
 function simplifyPolyline(points: Point[], tolerance = 0.0001): Point[] {
   if (points.length <= 2) return points;
 
@@ -117,7 +119,10 @@ export function buildVisualizationFromSamples(
   const gpsPointsCount = gps.length;
   const samplesCount = samples.length;
 
-  const simplified = gps.length > 2 ? simplifyPolyline(gps, 0.0001) : gps;
+  const simplified =
+    gps.length > 2
+      ? simplifyPolyline(gps, GARMIN_POLYLINE_SIMPLIFY_TOLERANCE)
+      : gps;
   const summaryPolyline = simplified.length ? encodePolyline(simplified) : null;
 
   return {
