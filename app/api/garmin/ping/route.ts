@@ -19,7 +19,9 @@ function extractGarminActivityUserIds(payload: GarminPingPayload) {
     userIds.add(payload.userId.trim());
   }
 
-  const activities = Array.isArray(payload.activities) ? payload.activities : [];
+  const activities = Array.isArray(payload.activities)
+    ? payload.activities
+    : [];
 
   for (const item of activities) {
     if (typeof item.userId === 'string' && item.userId.trim()) {
@@ -109,6 +111,10 @@ export async function POST(request: NextRequest) {
   }
 
   console.log('Garmin ping parsed payload', JSON.stringify(payload));
+  console.log('[GARMIN PUSH RECEIVED]', {
+    timestamp: new Date().toISOString(),
+    payload,
+  });
 
   try {
     const result = await processGarminPing(payload);
