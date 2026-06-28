@@ -12,6 +12,7 @@ type Section = {
   title: string;
   paragraphs?: string[];
   bullets?: string[];
+  afterBulletsParagraphs?: string[];
 };
 
 const copy: Record<
@@ -71,12 +72,21 @@ const copy: Record<
       },
       {
         title: "5. Subscriptions and Payments",
-        paragraphs: ["Optional premium features may be offered via in-app purchases."],
+        paragraphs: [
+          "PaceFrame may offer optional premium features through auto-renewable in-app subscriptions.",
+          "Available subscription options may include:",
+        ],
         bullets: [
-          "Auto-renew unless canceled",
-          "Managed via Apple or Google account",
-          "Subject to store billing policies",
-          "Refunds handled by store policies",
+          "PaceFrame Premium Weekly",
+          "PaceFrame Premium Annual",
+        ],
+        afterBulletsParagraphs: [
+          "Subscription pricing and duration are displayed in the app before purchase and may vary by country or region.",
+          "Payment will be charged to your Apple ID or Google Play account at confirmation of purchase.",
+          "Subscriptions automatically renew unless canceled at least 24 hours before the end of the current billing period.",
+          "Your account will be charged for renewal within 24 hours before the end of the current billing period.",
+          "You can manage or cancel your subscription in your App Store or Google Play account settings.",
+          "Refunds are handled according to Apple App Store or Google Play policies.",
         ],
       },
       {
@@ -170,13 +180,20 @@ const copy: Record<
       {
         title: "5. Abonnements et paiements",
         paragraphs: [
-          "Des fonctionnalites premium optionnelles peuvent etre proposees via achats integres.",
+          "PaceFrame peut proposer des fonctionnalites premium optionnelles via des abonnements integres a renouvellement automatique.",
+          "Les options d'abonnement disponibles peuvent inclure:",
         ],
         bullets: [
-          "Renouvellement automatique sauf annulation",
-          "Gestion via compte Apple ou Google",
-          "Soumis aux regles de facturation du store",
-          "Remboursements selon les politiques du store",
+          "PaceFrame Premium Weekly",
+          "PaceFrame Premium Annual",
+        ],
+        afterBulletsParagraphs: [
+          "Le prix et la duree de l'abonnement sont affiches dans l'app avant l'achat et peuvent varier selon le pays ou la region.",
+          "Le paiement sera facture a votre compte Apple ID ou Google Play lors de la confirmation de l'achat.",
+          "Les abonnements se renouvellent automatiquement sauf annulation au moins 24 heures avant la fin de la periode de facturation en cours.",
+          "Votre compte sera facture pour le renouvellement dans les 24 heures precedant la fin de la periode de facturation en cours.",
+          "Vous pouvez gerer ou annuler votre abonnement dans les reglages de votre compte App Store ou Google Play.",
+          "Les remboursements sont traites conformement aux politiques de l'Apple App Store ou de Google Play.",
         ],
       },
       {
@@ -293,6 +310,9 @@ export default async function TermsPage({ params }: PageProps) {
                 ))}
               </ul>
             ) : null}
+            {section.afterBulletsParagraphs?.map((paragraph) => (
+              <p key={paragraph}>{paragraph}</p>
+            ))}
             {section.title.includes("Contact") ? (
               <p>
                 {t.contactLabel} {" "}
