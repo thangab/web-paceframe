@@ -21,17 +21,17 @@ const copy: Record<
 > = {
   en: {
     placeholder: "you@email.com",
-    submit: "Notify me",
+    submit: "Subscribe",
     loading: "Sending...",
     genericError: "Something went wrong.",
-    fallbackSuccess: "Thanks, you're on the waitlist.",
+    fallbackSuccess: "Thanks, you're subscribed to the newsletter.",
   },
   fr: {
     placeholder: "ton@email.com",
-    submit: "Me notifier",
+    submit: "S'inscrire",
     loading: "Envoi...",
     genericError: "Une erreur est survenue.",
-    fallbackSuccess: "Merci, vous êtes bien inscrit.",
+    fallbackSuccess: "Merci, tu es bien inscrit a la newsletter.",
   },
 };
 
@@ -60,7 +60,7 @@ export default function NewsletterForm({ locale }: NewsletterFormProps) {
       }
 
       setState("success");
-      setMessage(locale === "fr" ? t.fallbackSuccess : (payload.message ?? t.fallbackSuccess));
+      setMessage(t.fallbackSuccess);
       setEmail("");
     } catch (error) {
       setState("error");

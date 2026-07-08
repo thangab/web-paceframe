@@ -9,6 +9,7 @@ type PageProps = {
 };
 
 const siteUrl = "https://paceframe.app";
+const appStoreUrl = "https://apps.apple.com/fr/app/paceframe/id6759337106";
 
 const copy: Record<
   Locale,
@@ -20,6 +21,7 @@ const copy: Record<
     titleAccent: string;
     subtitle: string;
     heroCta: string;
+    secondaryCta: string;
     launchStatus: string;
     waitlistOpen: string;
     statusText: string;
@@ -31,58 +33,64 @@ const copy: Record<
     templatesBody: string;
     notAvailable: string;
     formLead: string;
+    appStoreEyebrow: string;
   }
 > = {
   en: {
-    metaTitle: "PaceFrame - Turn Activities Into Shareable Visuals",
+    metaTitle: "PaceFrame - Download on the App Store",
     metaDescription:
-      "PaceFrame helps athletes transform activity stats into clean, high-impact visuals for social sharing, including Instagram and TikTok stories, with connection via Strava or Apple Health.",
-    comingSoon: "Coming Soon",
-    title: "PaceFrame is launching",
-    titleAccent: "very soon",
+      "PaceFrame is available on the App Store. Turn activity stats into clean, high-impact visuals for social sharing, including Instagram and TikTok stories, with connection via Strava or Apple Health.",
+    comingSoon: "Available Now",
+    title: "PaceFrame is available",
+    titleAccent: "on the App Store",
     subtitle:
-      "A new way to turn your sports activities into bold visuals built for social sharing, including Instagram and TikTok stories. The app is currently being finalized.",
-    heroCta: "Join the waitlist",
+      "Turn your sports activities into bold visuals built for social sharing, including Instagram and TikTok stories. Download PaceFrame for iPhone today.",
+    heroCta: "Download on the App Store",
+    secondaryCta: "See generated visuals",
     launchStatus: "Launch Status",
-    waitlistOpen: "Waitlist is open",
+    waitlistOpen: "iOS app is live",
     statusText:
-      "Public launch is coming soon. Join with your email to get early access updates.",
-    bullet1: "App in final polishing",
-    bullet2: "Progressive access by email",
+      "PaceFrame is now available for iPhone on the Apple App Store.",
+    bullet1: "Available for iPhone",
+    bullet2: "Download directly from Apple",
     bullet3: "Direct support: contact@paceframe.app",
     templatesTitle: "Generated Visuals",
     templatesSubtitle:
       "Real activity visuals generated automatically from PaceFrame styles.",
     templatesBody:
       "Each visual is auto-generated from your activity data. PaceFrame formats the key stats into modern story-ready layouts so you can share instantly on social media.",
-    notAvailable: "The app is not available yet",
-    formLead: "PaceFrame is launching soon. Leave your email to get notified.",
+    notAvailable: "Get updates from PaceFrame",
+    formLead:
+      "Leave your email to receive product news, feature updates, and launch notes.",
+    appStoreEyebrow: "Newsletter",
   },
   fr: {
-    metaTitle: "PaceFrame - Transforme Tes Activites En Visuels",
+    metaTitle: "PaceFrame - Disponible sur l'App Store",
     metaDescription:
-      "PaceFrame permet aux sportifs de transformer leurs stats d'activite en visuels impactants pour les reseaux sociaux, notamment les stories Instagram et TikTok, avec connexion via Strava ou Apple Health.",
-    comingSoon: "Coming Soon",
-    title: "PaceFrame arrive",
-    titleAccent: "tres bientot",
+      "PaceFrame est disponible sur l'App Store. Transforme tes stats d'activite en visuels impactants pour les reseaux sociaux, notamment les stories Instagram et TikTok, avec connexion via Strava ou Apple Health.",
+    comingSoon: "Disponible maintenant",
+    title: "PaceFrame est disponible",
+    titleAccent: "sur l'App Store",
     subtitle:
-      "Une nouvelle facon de transformer tes activites sportives en visuels forts, penses pour les reseaux sociaux, notamment les stories Instagram et TikTok. L'application est en cours de finalisation.",
-    heroCta: "Rejoindre la liste d'attente",
-    launchStatus: "Etat du lancement",
-    waitlistOpen: "Liste d'attente ouverte",
+      "Transforme tes activites sportives en visuels forts, penses pour les reseaux sociaux, notamment les stories Instagram et TikTok. Telecharge PaceFrame pour iPhone des aujourd'hui.",
+    heroCta: "Telecharger sur l'App Store",
+    secondaryCta: "Voir les visuels",
+    launchStatus: "Disponibilite",
+    waitlistOpen: "L'app iOS est en ligne",
     statusText:
-      "Le lancement public approche. Inscris ton email pour recevoir l'acces en priorite.",
-    bullet1: "Application en finalisation",
-    bullet2: "Acces progressif par email",
+      "PaceFrame est maintenant disponible pour iPhone sur l'Apple App Store.",
+    bullet1: "Disponible pour iPhone",
+    bullet2: "Telechargement direct via Apple",
     bullet3: "Support direct: contact@paceframe.app",
     templatesTitle: "Visuels Generes",
     templatesSubtitle:
       "Des visuels d'activite reels, generes automatiquement avec les styles PaceFrame.",
     templatesBody:
       "Chaque visuel est genere automatiquement a partir de tes donnees d'activite. PaceFrame met en forme les stats importantes dans des layouts modernes prets pour les stories.",
-    notAvailable: "L'app n'est pas encore disponible",
+    notAvailable: "Recois les nouvelles de PaceFrame",
     formLead:
-      "PaceFrame arrive bientot. Laisse ton email pour etre prevenu au lancement.",
+      "Laisse ton email pour recevoir les actus produit, les nouvelles fonctionnalites et les notes de lancement.",
+    appStoreEyebrow: "Newsletter",
   },
 };
 
@@ -105,6 +113,21 @@ const shiftedLoopedTemplateImages = [
   ...templateImages.slice(2),
   ...templateImages.slice(0, 2),
 ];
+
+function AppStoreIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-5 w-5 flex-none"
+      fill="currentColor"
+    >
+      <path
+        d="M16.2 12.5c0-2.2 1.8-3.3 1.9-3.3-1-1.5-2.6-1.7-3.2-1.8-1.4-.1-2.6.8-3.3.8s-1.8-.8-2.9-.8c-1.5 0-2.9.9-3.7 2.2-1.6 2.8-.4 6.9 1.1 9.2.8 1.1 1.7 2.4 2.9 2.3 1.2 0 1.6-.7 2.9-.7 1.4 0 1.7.7 2.9.7 1.2 0 2-1.1 2.8-2.3.9-1.3 1.2-2.5 1.2-2.6 0 0-2.5-1-2.6-3.7Zm-2.2-6.6c.6-.8 1.1-1.9 1-2.9-1 0-2.1.6-2.8 1.4-.6.7-1.1 1.8-1 2.8 1.1.1 2.2-.5 2.8-1.3Z"
+      />
+    </svg>
+  );
+}
 
 export function generateStaticParams() {
   return locales.map((locale) => ({ locale }));
@@ -167,10 +190,19 @@ export default async function LocaleHomePage({ params }: PageProps) {
             </p>
             <div className="flex flex-wrap items-center gap-4">
               <a
-                href="#get-started"
-                className="rounded-xl bg-[#D4FF54] px-6 py-3 text-sm font-bold tracking-wide text-[#131B2E] uppercase transition hover:scale-[1.02] hover:brightness-95"
+                href={appStoreUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-xl bg-[#D4FF54] px-6 py-3 text-sm font-bold tracking-wide text-[#131B2E] uppercase transition hover:scale-[1.02] hover:brightness-95"
               >
+                <AppStoreIcon />
                 {t.heroCta}
+              </a>
+              <a
+                href="#generated-visuals"
+                className="rounded-xl border border-white/15 px-6 py-3 text-sm font-bold tracking-wide text-white uppercase transition hover:border-[#D4FF54]/60 hover:text-[#D4FF54]"
+              >
+                {t.secondaryCta}
               </a>
             </div>
           </div>
@@ -204,7 +236,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
           </div>
       </section>
 
-      <section className="grid items-center gap-8 lg:grid-cols-2">
+      <section id="generated-visuals" className="grid items-center gap-8 lg:grid-cols-2">
         <div className="space-y-4">
           <h2 className="text-xl font-bold sm:text-2xl">{t.templatesTitle}</h2>
           <p className="max-w-xl text-sm text-white/75">{t.templatesSubtitle}</p>
@@ -292,6 +324,9 @@ export default async function LocaleHomePage({ params }: PageProps) {
         >
           <div className="flex flex-col gap-5">
             <div>
+              <p className="text-xs font-semibold tracking-[0.2em] text-[#D4FF54] uppercase">
+                {t.appStoreEyebrow}
+              </p>
               <h3 className="text-2xl font-bold">{t.notAvailable}</h3>
               <p className="mt-2 text-white/75">{t.formLead}</p>
             </div>

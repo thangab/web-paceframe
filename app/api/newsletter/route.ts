@@ -58,6 +58,6 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({
-    message: "Perfect, you'll be notified at launch.",
+    message: "Thanks, you're subscribed to the newsletter.",
   });
 }
